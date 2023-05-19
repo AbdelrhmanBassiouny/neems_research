@@ -86,7 +86,8 @@ if __name__ == '__main__':
         df.drop(columns=[f'{cname}_start', f'{cname}_end'], inplace=True)
     print(df.head())
 
-    # Get all subtasks for each task from the dataframe
+    # Get all subtasks for each task from the dataframe.
+    df['prev_prev_subtask_type'] = 'None'
     df['prev_subtask_type'] = 'None'
     df['next_subtask_type'] = 'None'
     df['prev_task_type'] = 'None'
@@ -103,7 +104,7 @@ if __name__ == '__main__':
     # print(df['participant_type'].unique())
     # print(len(df['participant_type'].unique()))
     # exit()
-    load = True
+    load = False
     if not load:
         task_subtask_dict = dict()
         start_time = time()
@@ -126,7 +127,9 @@ if __name__ == '__main__':
                 #     print(time_start, time_end)
                 for i, subtask in enumerate(task_subtask_dict[neem_id][task]):
                     df_task_subtask_indicies = task_indicies & (df['subtask'] == subtask)
-                    if i != 0:
+                    if i > 1:
+                        df['prev_prev_subtask_type'][df_task_subtask_indicies] = df['subtask_type'][prev_subtask_indicies].values[0]
+                    if i > 0:
                         prev_subtask_indicies = task_indicies & (df['subtask'] == task_subtask_dict[neem_id][task][i-1])
                         df['prev_subtask_type'][df_task_subtask_indicies] = df['subtask_type'][prev_subtask_indicies].values[0]
                         # df_task_subtask['prev_subtask'] = task_subtask_dict[neem_id][task][i-1]
@@ -170,6 +173,7 @@ if __name__ == '__main__':
     'soma:AssumingArmPose', 'soma:PickingUp', 'soma:Placing',
     'soma:Navigation', 'soma:Navigating', 'soma:Transporting',
     'soma:LookingAt', 'soma:Detecting', 'soma:Opening', 'soma:Closing'} # Current PyCRAM action types
+        evidence["prev_prev_subtask_type"] = evidence["subtask_type"].union({'None'})
         evidence["prev_subtask_type"] = evidence["subtask_type"].union({'None'})
         evidence["next_subtask_type"] = evidence["subtask_type"].union({'None'})
         evidence["prev_task_type"] = evidence["task_type"].union({'None'})
@@ -179,8 +183,8 @@ if __name__ == '__main__':
                                         'soma:Plate', 'soma:Spoon', 'soma:Cereal',
                                         'soma:Fork', 'soma:Cup'}
     else:
-        # model = jpt.trees.JPT.load("/tmp/neem_action_tree.jpt")
-        model = jpt.trees.JPT.load("neem_action_tree_looper_16_5_2023.jpt")
+        model = jpt.trees.JPT.load("/tmp/neem_action_tree.jpt")
+        # model = jpt.trees.JPT.load("neem_action_tree_looper_16_5_2023.jpt")
         evidence = dict()
         # evidence['task_type'] = {'soma:PhysicalTask'}
         evidence['subtask_type'] = {'soma:LookingAt'}
@@ -219,6 +223,7 @@ if __name__ == '__main__':
             next_task = Node(str(mpe[0]['task_type']) + str(j), parent=next_task)
             del mpe[0]['next_task_type']
             j += 1
+        mpe[0]['prev_prev_subtask_type'] = mpe[0]['prev_subtask_type']
         mpe[0]['prev_subtask_type'] = mpe[0]['subtask_type']
         mpe[0]['subtask_type'] = mpe[0]['next_subtask_type']
         del mpe[0]['next_subtask_type']

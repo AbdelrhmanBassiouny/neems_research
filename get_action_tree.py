@@ -87,6 +87,7 @@ if __name__ == '__main__':
     print(df.head())
 
     # Get all subtasks for each task from the dataframe.
+    df['prev_prev_prev_subtask_type'] = 'None'
     df['prev_prev_subtask_type'] = 'None'
     df['prev_subtask_type'] = 'None'
     df['next_subtask_type'] = 'None'
@@ -119,6 +120,7 @@ if __name__ == '__main__':
                     # print(df['task_type'][prev_task_indicies].values)
                     df['prev_task_type'][task_indicies] = df['task_type'][prev_task_indicies].values[0]
                     df['next_task_type'][prev_task_indicies] = df['task_type'][task_indicies].values[0]
+                # prev_prev_subtask_indicies = prev_task_indicies
                 prev_task_indicies = task_indicies
                 task_subtask_dict[neem_id][task] = df['subtask'][task_indicies].unique().tolist()
                 # for subtask in task_subtask_dict[neem_id][task]:
@@ -127,12 +129,15 @@ if __name__ == '__main__':
                 #     print(time_start, time_end)
                 for i, subtask in enumerate(task_subtask_dict[neem_id][task]):
                     df_task_subtask_indicies = task_indicies & (df['subtask'] == subtask)
-                    if i > 1:
-                        df['prev_prev_subtask_type'][df_task_subtask_indicies] = df['subtask_type'][prev_subtask_indicies].values[0]
                     if i > 0:
                         prev_subtask_indicies = task_indicies & (df['subtask'] == task_subtask_dict[neem_id][task][i-1])
                         df['prev_subtask_type'][df_task_subtask_indicies] = df['subtask_type'][prev_subtask_indicies].values[0]
                         # df_task_subtask['prev_subtask'] = task_subtask_dict[neem_id][task][i-1]
+                    if i > 1:
+                        # prev_prev_subtask_indicies = prev_subtask_indicies
+                        df['prev_prev_subtask_type'][df_task_subtask_indicies] = df['prev_subtask_type'][prev_subtask_indicies].values[0]
+                    if i > 2:
+                        df['prev_prev_prev_subtask_type'][df_task_subtask_indicies] = df['prev_prev_subtask_type'][prev_subtask_indicies].values[0]
                     if i != len(task_subtask_dict[neem_id][task])-1:
                         next_subtask_indicies = task_indicies & (df['subtask'] == task_subtask_dict[neem_id][task][i+1])
                         df['next_subtask_type'][df_task_subtask_indicies] = df['subtask_type'][next_subtask_indicies].values[0]
@@ -173,6 +178,7 @@ if __name__ == '__main__':
     'soma:AssumingArmPose', 'soma:PickingUp', 'soma:Placing',
     'soma:Navigation', 'soma:Navigating', 'soma:Transporting',
     'soma:LookingAt', 'soma:Detecting', 'soma:Opening', 'soma:Closing'} # Current PyCRAM action types
+        evidence["prev_prev_prev_subtask_type"] = evidence["subtask_type"].union({'None'})
         evidence["prev_prev_subtask_type"] = evidence["subtask_type"].union({'None'})
         evidence["prev_subtask_type"] = evidence["subtask_type"].union({'None'})
         evidence["next_subtask_type"] = evidence["subtask_type"].union({'None'})
@@ -183,20 +189,22 @@ if __name__ == '__main__':
                                         'soma:Plate', 'soma:Spoon', 'soma:Cereal',
                                         'soma:Fork', 'soma:Cup'}
     else:
-        model = jpt.trees.JPT.load("/tmp/neem_action_tree.jpt")
+        # model = jpt.trees.JPT.load("/tmp/neem_action_tree.jpt")
         # model = jpt.trees.JPT.load("neem_action_tree_looper_16_5_2023.jpt")
+        model = jpt.trees.JPT.load("neem_action_tree_2_prev_looper_19_5_2023.jpt")
         evidence = dict()
         # evidence['task_type'] = {'soma:PhysicalTask'}
         evidence['subtask_type'] = {'soma:LookingAt'}
-        # evidence['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
-                                        # 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
-                                        # 'soma:Fork', 'soma:Cup'}
+        evidence['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
+                                        'soma:Plate', 'soma:Spoon', 'soma:Cereal',
+                                        'soma:Fork', 'soma:Cup'}
         # evidence['subtask_param'] = {'None'}
         # evidence['subtask_state'] = {'soma:ExecutionState_Succeeded'}
         # evidence['task_state'] = {'soma:ExecutionState_Succeeded'}
         # evidence['activity'] = {'Kitchen activity'}
         # evidence['environment'] = {'Kitchen'}
         evidence['prev_subtask_type'] = {'soma:PickingUp'}
+        # evidence['prev_prev_subtask_type'] = {'soma:LookingAt'}
         # evidence['next_subtask_type'] = {'soma:Closing'}
         # evidence['prev_task_type'] = {'None'}
         # evidence['next_task_type'] = {'soma:MovingTo'}
@@ -214,18 +222,26 @@ if __name__ == '__main__':
     i = 0
     j = 1
     k = 1
-    while not ((mpe[0]['next_task_type'] == 'None' and mpe[0]['next_subtask_type'] == 'None') or i > 10):
+    while not (('None' in mpe[0]['next_task_type'] and 'None' in mpe[0]['next_subtask_type']) or i > 30):
         print(mpe[0])
-
-        if mpe[0]['next_subtask_type'] == 'None':
+        if len(mpe[0]['next_subtask_type']) > 1:
+            print(mpe[0]['next_subtask_type'])
+            exit()
+        if 'None' in mpe[0]['next_subtask_type']:
             mpe[0]['prev_task_type'] = mpe[0]['task_type']
             mpe[0]['task_type'] = mpe[0]['next_task_type']
-            next_task = Node(str(mpe[0]['task_type']) + str(j), parent=next_task)
+            next_task = Node(str(mpe[0]['task_type']) + str(j), parent=next_task.parent)
             del mpe[0]['next_task_type']
             j += 1
-        mpe[0]['prev_prev_subtask_type'] = mpe[0]['prev_subtask_type']
-        mpe[0]['prev_subtask_type'] = mpe[0]['subtask_type']
-        mpe[0]['subtask_type'] = mpe[0]['next_subtask_type']
+            mpe[0]['prev_prev_prev_subtask_type'] = 'None'
+            mpe[0]['prev_prev_subtask_type'] = 'None'
+            mpe[0]['prev_subtask_type'] = 'None'
+            del mpe[0]['subtask_type']
+        else:
+            mpe[0]['prev_prev_prev_subtask_type'] = mpe[0]['prev_prev_subtask_type']
+            mpe[0]['prev_prev_subtask_type'] = mpe[0]['prev_subtask_type']
+            mpe[0]['prev_subtask_type'] = mpe[0]['subtask_type']
+            mpe[0]['subtask_type'] = mpe[0]['next_subtask_type']
         del mpe[0]['next_subtask_type']
         mpe[0]['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
                                         'soma:Plate', 'soma:Spoon', 'soma:Cereal',
@@ -238,7 +254,7 @@ if __name__ == '__main__':
         del mpe[0]['neem_name']
         del mpe[0]['neem_desc']
         mpe, likelihood = model.mpe(mpe[0])
-        if mpe[0]['subtask_type'] != 'None':
+        if 'None' not in mpe[0]['subtask_type']:
             subtask = Node(str(mpe[0]['subtask_type']) + str(k), parent=next_task)
             k += 1
         i += 1

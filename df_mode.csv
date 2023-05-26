@@ -1,0 +1,2 @@
+,task_type,subtask_type,participant_type,subtask_param,subtask_state,task_state,neem_name,neem_desc,activity,environment,prev_prev_prev_subtask_type,prev_prev_subtask_type,prev_subtask_type,next_subtask_type,prev_task_type,next_task_type
+0,soma:LookingFor,soma:LookingAt,None,None,soma:ExecutionState_Succeeded,soma:ExecutionState_Succeeded,Kitchen Test,UROBSIM-test,Kitchen activity,Kitchen,None,None,soma:GetActionTrajectory,None,soma:PhysicalTask,soma:LookingAt

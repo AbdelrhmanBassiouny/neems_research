@@ -207,6 +207,7 @@ if __name__ == '__main__':
     if load_df:
         df = pd.read_pickle('df.pkl')
         print(df.head())
+        task_lvl = 'task'
         # df['task_start'] = pd.to_datetime(df['task_start'])
         # print(df['task_start'])
         # df['task_end'] = pd.to_datetime(df['task_end'])
@@ -218,11 +219,11 @@ if __name__ == '__main__':
         #     fig.show()
         # set different line properties for each set of positions
         # note that some overlap
-        start = df['task_start'].to_numpy()
-        end = df['task_end'].to_numpy()
+        start = df[f'{task_lvl}_start'].to_numpy()
+        end = df[f'{task_lvl}_end'].to_numpy()
         lineoffsets1 = (start + end) * 0.5
         linelengths1 = end - start
-        data1 = df['task'].to_numpy().astype(str)
+        data1 = df[task_lvl].to_numpy().astype(str)
         # set different colors for each set of positions
         colors1 = ['C{}'.format(i) for i in range(1)]
         # fig, axs = plt.subplots(2, 2)
@@ -231,7 +232,7 @@ if __name__ == '__main__':
         plt.eventplot(data1, colors=colors1, lineoffsets=lineoffsets1,
                             linelengths=linelengths1, orientation='vertical')
         plt.gca().invert_yaxis()
-        plt.yticks(np.arange(len(df['task'].unique())), df['task'].unique())
+        plt.yticks(np.arange(len(df[task_lvl].unique())), df[task_lvl].unique())
         xticks = np.linspace(start=np.min(start), stop=np.max(start), num=10)
         plt.xticks(xticks, np.round(xticks - np.min(start), 2), rotation=90)
         # plt.vlines(xticks, ymin=-1, ymax=len(df['task_type'].unique()), colors='k', linestyles='dashed', linewidth=0.5)

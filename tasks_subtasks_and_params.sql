@@ -11,7 +11,7 @@ on hc.dul_Entity_s = task.dul_Action_s and hc.neem_id = task.neem_id
 INNER JOIN dul_executesTask as subtask
 on hc.dul_Entity_o = subtask.dul_Action_s and hc.neem_id = subtask.neem_id
 INNER JOIN rdf_type as taskt
-On task.dul_Task_o = taskt.s and taskt.o != 'owl:NamedIndividual' and task.neem_id = taskt.neem_id
+On task.dul_Task_o = taskt.s and taskt.o != 'owl:NamedIndividual' and task.neem_id = taskt.neem_id and taskt.o not Regexp '^soma:Phy'
 INNER JOIN rdf_type as subtaskt
 ON subtask.dul_Task_o = subtaskt.s and subtaskt.o != 'owl:NamedIndividual' and subtask.neem_id = subtaskt.neem_id
 Left JOIN (Select hpara.dul_Concept_s, dc.dul_Entity_o, hpara.dul_Parameter_o, hpara.neem_id

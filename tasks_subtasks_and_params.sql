@@ -4,14 +4,14 @@ SELECT task.dul_Task_o as task, taskt.o as task_type, task_ib.o as task_start, t
        participant_type.o as participant_type, parameter_type2.o as subtask_param,
        subtask_es.soma_ExecutionStateRegion_o as subtask_state, task_es.soma_ExecutionStateRegion_o as task_state,
        n.name as neem_name, n.description as neem_desc, n.actname as activity, ne.environment_values as environment,
-       n._id as neem_id
+       n._id as neem_id, n.created_by as created_by
 From dul_hasConstituent as hc
 INNER JOIN dul_executesTask as task
 on hc.dul_Entity_s = task.dul_Action_s and hc.neem_id = task.neem_id
 INNER JOIN dul_executesTask as subtask
 on hc.dul_Entity_o = subtask.dul_Action_s and hc.neem_id = subtask.neem_id
 INNER JOIN rdf_type as taskt
-On task.dul_Task_o = taskt.s and taskt.o != 'owl:NamedIndividual' and task.neem_id = taskt.neem_id and taskt.o not Regexp '^soma:Phy'
+On task.dul_Task_o = taskt.s and taskt.o != 'owl:NamedIndividual' and task.neem_id = taskt.neem_id# and taskt.o not Regexp '^soma:Phy'
 INNER JOIN rdf_type as subtaskt
 ON subtask.dul_Task_o = subtaskt.s and subtaskt.o != 'owl:NamedIndividual' and subtask.neem_id = subtaskt.neem_id
 Left JOIN (Select hpara.dul_Concept_s, dc.dul_Entity_o, hpara.dul_Parameter_o, hpara.neem_id
@@ -36,7 +36,7 @@ ON subtask_hp.dul_Object_o = participant_type.s and participant_type.o != 'owl:N
 Left JOIN soma_hasExecutionState task_es on task_es.dul_Action_s = hc.dul_Entity_s and task_es.neem_id = hc.neem_id
 Left JOIN soma_hasExecutionState subtask_es on subtask_es.dul_Action_s = hc.dul_Entity_o and subtask_es.neem_id = hc.neem_id
 # Left join neems n on n._id = hc.neem_id
-Left Join (Select _id, n.name, n.description, n.ID, na.name as actname
+Left Join (Select _id, n.name, n.description, n.ID, na.name as actname, n.created_by
            From neems as n
                     Left Join (Select na.ID, nai.neems_ID, na.name
                                From neems_activity as na

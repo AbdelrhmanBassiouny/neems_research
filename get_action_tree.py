@@ -203,42 +203,74 @@ if __name__ == '__main__':
     infer_from_df = False
     n_prev_subtasks = 3
     n_prev_tasks = 3
-
+    
     if load_df:
         df = pd.read_pickle('df.pkl')
         print(df.head())
-        task_lvl = 'task'
+        # print(np.where(df['created_by'] == 'Abhijit'))
+        # exit()
+        use_type = True
+        task_lvl = '_type' if use_type else ''
         # df['task_start'] = pd.to_datetime(df['task_start'])
         # print(df['task_start'])
         # df['task_end'] = pd.to_datetime(df['task_end'])
         for neem_id in df['neem_id'].unique():
-            df = df[df['neem_id'] == neem_id]
-            break
-        #     fig = px.timeline(df, x_start="task_start", x_end="task_end", y="task")
-        #     fig.update_yaxes(autorange="reversed") # otherwise tasks are listed from the bottom up
-        #     fig.show()
-        # set different line properties for each set of positions
-        # note that some overlap
-        start = df[f'{task_lvl}_start'].to_numpy()
-        end = df[f'{task_lvl}_end'].to_numpy()
-        lineoffsets1 = (start + end) * 0.5
-        linelengths1 = end - start
-        data1 = df[task_lvl].to_numpy().astype(str)
-        # set different colors for each set of positions
-        colors1 = ['C{}'.format(i) for i in range(1)]
-        # fig, axs = plt.subplots(2, 2)
+            curr_df = df[df['neem_id'] == neem_id]
+            # break
+            names = []
+            name_types = []
+            start = []
+            end = []
+            tasks = curr_df['subtask'].unique()
+            for i, t in enumerate(tasks):
+                # task_indicies = curr_df['task'] == t
+                subt_ind = curr_df['subtask'] == t
+                if curr_df['task'][subt_ind].values[0] not in names:
+                    e = curr_df['task_end'][subt_ind].values[0]
+                    s = curr_df['task_start'][subt_ind].values[0]
+                    names.append(curr_df['task'][subt_ind].values[0])
+                    name_types.append(curr_df['task_type'][subt_ind].values[0])
+                    start.append(s)
+                    end.append(e)
+                # if t not in names:
+                #     s = curr_df['subtask_start'][subt_ind].values[0]
+                #     e = curr_df['subtask_end'][subt_ind].values[0]
+                #     names.append(t)
+                #     name_types.append(curr_df['subtask_type'][subt_ind].values[0])
+                #     start.append(s)
+                #     end.append(e)
+                    
+                # names.extend(curr_df['subtask'][task_indicies])
+                # name_types.extend(curr_df['subtask_type'][task_indicies])
+                # start.extend(curr_df['subtask_start'][task_indicies])
+                # end.extend(curr_df['subtask_end'][task_indicies])
+            
+            start = np.array(start)
+            end = np.array(end)
+            neg_vals = end < 0
+            end[neg_vals] = np.max(end)
+            lineoffsets1 = (start + end) * 0.5
+            linelengths1 = end - start
+            data1 = name_types if use_type else names
+            udata1 = pd.DataFrame(data1)
+            udata1 = udata1[0].unique()
+            # set different colors for each set of positions
+            colors1 = ['C{}'.format(i) for i in range(1)]
+            # fig, axs = plt.subplots(2, 2)
 
-        # create a horizontal plot
-        plt.eventplot(data1, colors=colors1, lineoffsets=lineoffsets1,
-                            linelengths=linelengths1, orientation='vertical')
-        plt.gca().invert_yaxis()
-        plt.yticks(np.arange(len(df[task_lvl].unique())), df[task_lvl].unique())
-        xticks = np.linspace(start=np.min(start), stop=np.max(start), num=10)
-        plt.xticks(xticks, np.round(xticks - np.min(start), 2), rotation=90)
-        # plt.vlines(xticks, ymin=-1, ymax=len(df['task_type'].unique()), colors='k', linestyles='dashed', linewidth=0.5)
-        # plt.hlines(y=np.arange(len(df['task_type'].unique())), xmin=np.min(start), xmax=np.max(end), colors='k', linestyles='dashed', linewidth=0.5)
-        plt.grid()
-        plt.show()
+            # create a horizontal plot
+            plt.eventplot(data1, colors=colors1, lineoffsets=lineoffsets1,
+                                linelengths=linelengths1, orientation='vertical')
+
+            plt.gca().invert_yaxis()
+            plt.yticks(np.arange(len(udata1)), udata1)
+            xticks = np.linspace(start=np.min(start), stop=np.max(end), num=10)
+            plt.xticks(xticks, np.round(xticks - np.min(start), 2), rotation=90)
+            # plt.vlines(xticks, ymin=-1, ymax=len(df['task_type'].unique()), colors='k', linestyles='dashed', linewidth=0.5)
+            # plt.hlines(y=np.arange(len(df['task_type'].unique())), xmin=np.min(start), xmax=np.max(end), colors='k', linestyles='dashed', linewidth=0.5)
+            plt.grid()
+            plt.title(curr_df['neem_name'].values[0] + '\n Created by: ' + curr_df['created_by'].values[0])
+            plt.show()
         exit()
     else:
         # Read sql file

@@ -14,7 +14,7 @@ from anytree.exporter import DotExporter
 import matplotlib.pyplot as plt
 import pickle
 import plotly.express as px
-
+import plotly.graph_objects as go
 
 
 
@@ -55,7 +55,14 @@ def get_value_from_sql(table_name: str, engine:Engine, col_names: Optional[list]
                 result = []
         return result
 
-def infer_and_fit_model_from_df(df):
+def infer_and_fit_model_from_df(df, remove_subtasks=False):
+    for cname in ['task', 'subtask', 'neem_id', 'task_duration', 'subtask_duration', 'participant', 'neem_name', 'neem_desc']:
+        if cname in df.columns:
+            df.drop(columns=f'{cname}', inplace=True)
+    if remove_subtasks:
+        for col in df.columns:
+            if 'subtask' in col:
+                df.drop(columns=col, inplace=True)
     variables = infer_from_dataframe(df, scale_numeric_types=False)
     # print(variables)
     model = jpt.trees.JPT(variables, min_samples_leaf=0.00005)
@@ -198,79 +205,64 @@ if __name__ == '__main__':
     logger.setLevel(logging.WARNING)
 
     load_df = True
-    load_from_sql = True
+    load_from_sql = not load_df
     save_df = True
-    infer_from_df = False
+    infer_from_df = True
     n_prev_subtasks = 3
     n_prev_tasks = 3
+    n_top_tasks = 2
+    n_parent_tasks = 1
+    plot_tasks = False
     
-    if load_df:
+    if plot_tasks:
         df = pd.read_pickle('df.pkl')
         print(df.head())
-        # print(np.where(df['created_by'] == 'Abhijit'))
-        # exit()
         use_type = True
-        task_lvl = '_type' if use_type else ''
-        # df['task_start'] = pd.to_datetime(df['task_start'])
-        # print(df['task_start'])
-        # df['task_end'] = pd.to_datetime(df['task_end'])
+        subtasks = df['subtask_type'].unique()
+        colors_dict = {subtasks[i]: f'C{i}' for i in range(len(subtasks))}
         for neem_id in df['neem_id'].unique():
             curr_df = df[df['neem_id'] == neem_id]
-            # break
-            names = []
-            name_types = []
-            start = []
-            end = []
-            tasks = curr_df['subtask'].unique()
-            for i, t in enumerate(tasks):
-                # task_indicies = curr_df['task'] == t
-                subt_ind = curr_df['subtask'] == t
-                if curr_df['task'][subt_ind].values[0] not in names:
-                    e = curr_df['task_end'][subt_ind].values[0]
-                    s = curr_df['task_start'][subt_ind].values[0]
-                    names.append(curr_df['task'][subt_ind].values[0])
-                    name_types.append(curr_df['task_type'][subt_ind].values[0])
-                    start.append(s)
-                    end.append(e)
-                # if t not in names:
-                #     s = curr_df['subtask_start'][subt_ind].values[0]
-                #     e = curr_df['subtask_end'][subt_ind].values[0]
-                #     names.append(t)
-                #     name_types.append(curr_df['subtask_type'][subt_ind].values[0])
-                #     start.append(s)
-                #     end.append(e)
-                    
-                # names.extend(curr_df['subtask'][task_indicies])
-                # name_types.extend(curr_df['subtask_type'][task_indicies])
-                # start.extend(curr_df['subtask_start'][task_indicies])
-                # end.extend(curr_df['subtask_end'][task_indicies])
-            
-            start = np.array(start)
-            end = np.array(end)
-            neg_vals = end < 0
-            end[neg_vals] = np.max(end)
-            lineoffsets1 = (start + end) * 0.5
-            linelengths1 = end - start
-            data1 = name_types if use_type else names
-            udata1 = pd.DataFrame(data1)
-            udata1 = udata1[0].unique()
-            # set different colors for each set of positions
-            colors1 = ['C{}'.format(i) for i in range(1)]
-            # fig, axs = plt.subplots(2, 2)
 
-            # create a horizontal plot
-            plt.eventplot(data1, colors=colors1, lineoffsets=lineoffsets1,
-                                linelengths=linelengths1, orientation='vertical')
+            start = dict()
+            end = dict()
+            lineoffsets = dict()
+            linelengths = dict()
+            st_data = curr_df['subtask_type'].values if use_type else curr_df['subtask'].values
+            t_data = curr_df['task_type'].values if use_type else curr_df['task'].values
+            ut_data = pd.DataFrame(t_data)[0].unique()
+            # print(curr_df.head())
+            fig = go.Figure()
+            neg_vals = curr_df[f'subtask_start'] < 0
+            curr_df[f'subtask_start'][neg_vals] = curr_df[f'task_start'][neg_vals]
+            neg_vals = curr_df[f'subtask_end'] < 0
+            curr_df[f'subtask_end'][neg_vals] = curr_df[f'task_end'][neg_vals]
 
-            plt.gca().invert_yaxis()
-            plt.yticks(np.arange(len(udata1)), udata1)
-            xticks = np.linspace(start=np.min(start), stop=np.max(end), num=10)
-            plt.xticks(xticks, np.round(xticks - np.min(start), 2), rotation=90)
-            # plt.vlines(xticks, ymin=-1, ymax=len(df['task_type'].unique()), colors='k', linestyles='dashed', linewidth=0.5)
-            # plt.hlines(y=np.arange(len(df['task_type'].unique())), xmin=np.min(start), xmax=np.max(end), colors='k', linestyles='dashed', linewidth=0.5)
-            plt.grid()
-            plt.title(curr_df['neem_name'].values[0] + '\n Created by: ' + curr_df['created_by'].values[0])
-            plt.show()
+            fig = px.timeline(curr_df, x_start=pd.to_datetime(curr_df[f'task_start'], unit='s'),
+                                x_end=pd.to_datetime(curr_df[f'task_end'], unit='s'),
+                                    y=f'task_type',
+                                    color=f'task_type',
+                                    hover_data={'subtask':True, 'task':True, 'participant_type':True},
+                                    # text=f'subtask_type',
+                                    title=f"tasks for {curr_df['neem_name'].values[0]}")
+            close_vals = [1]
+            while len(close_vals) > 0:
+                diff = np.diff(curr_df[f'task_start'])
+                close_vals = np.where(diff < 5)[0]
+                for i in range(len(close_vals)):
+                    # delete the close task
+                    curr_df.drop(curr_df.index[close_vals[i]+1], inplace=True)
+                    break
+            fig.update_xaxes(tickvals=pd.to_datetime(curr_df[f'task_start'], unit='s'), tickformat='%M:%S')
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightPink')
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightPink')
+            # for s in curr_df['task_start'].unique():
+            #     fig.add_vline(x=pd.to_datetime(s, unit='s'))
+            # fig.update_yaxes(autorange="reversed")          #if not specified as 'reversed', the tasks will be listed from bottom up       
+            # fig.data[1].width=0.5 # update the width of the 'Actual' schedule bars (the second trace of the figure)
+            # for i in range(1,len(fig.data)):
+            #     fig.data[i].width = 0.5
+            fig.show()
+            # exit()
         exit()
     else:
         # Read sql file
@@ -293,6 +285,10 @@ if __name__ == '__main__':
         for i in range(1, n_prev_tasks + 1):
             df[f'prev_{i}_task_type'] = 'None'
         df['next_task_type'] = 'None'
+        for i in range(1, n_top_tasks + 1):
+            df[f'top_{i}_task_type'] = 'None'
+        for i in range(1, n_parent_tasks + 1):
+            df[f'parent_{i}_task_type'] = 'None'
 
     evidence = dict()
     evidence["task_type"] = {'soma:PhysicalTask', 'soma:Transporting', 'soma:Accessing',
@@ -316,7 +312,7 @@ if __name__ == '__main__':
     evidence = dict()
     # evidence['task_type'] = {'soma:PhysicalTask'}
     evidence['subtask_type'] = {'soma:LookingAt'}
-    evidence['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
+    evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
                                     'soma:Plate', 'soma:Spoon', 'soma:Cereal',
                                     'soma:Fork', 'soma:Cup'}
     # evidence['subtask_param'] = {'None'}
@@ -335,6 +331,7 @@ if __name__ == '__main__':
 
     if load_df:
         model, variables = infer_and_fit_model_from_df(df)
+        print(df)
     elif load_from_sql:
         task_subtask_dict = dict()
         start_time = time()
@@ -345,41 +342,66 @@ if __name__ == '__main__':
             prev_task_indicies = None
             prev_task_end_time = 0
             for j, task in enumerate(all_tasks):
+
                 task_indicies = neem_indicies & (df['task'] == task)
-                if prev_task_indicies is not None:
-                    # df['prev_1_task_type'][task_indicies] = df['task_type'][prev_task_indicies].values[0]
-                    # df['next_task_type'][prev_task_indicies] = df['task_type'][task_indicies].values[0]
-                    for p in range(min([j,n_prev_tasks])):
-                        task1_name = f'prev_{p+1}_task_type'
-                        task2_name = 'task_type' if p == 0 else f'prev_{p}_task_type'
-                        df[task1_name][task_indicies] = df[task2_name][prev_task_indicies].values[0]
-                    df['next_task_type'][prev_task_indicies] = df['task_type'][task_indicies].values[0]
                 task_subtask_dict[neem_id][task] = df['subtask'][task_indicies].unique().tolist()
 
-                prev_task_indicies = task_indicies
-
+                if j < n_top_tasks:
+                    task_type = df['task_type'][task_indicies].values[0]
+                    df[f'top_{j+1}_task_type'][neem_indicies] = task_type
+                
+                # Subtasks
                 for i, subtask in enumerate(task_subtask_dict[neem_id][task]):                        
                     df_task_subtask_indicies = task_indicies & (df['subtask'] == subtask)
-                    # if i == 0:
-                    #     print("first subtask")
-                    #     task_start_time = df['task_start'][df_task_subtask_indicies].values[0]
-                    #     print(f"{task_start_time:f}")
-                    #     print(task_start_time >= prev_task_end_time)
-                    #     print(f"subtask_start = {df['subtask_start'][df_task_subtask_indicies].values[0]:f}")
                     if i > 0:
-                        prev_subtask_indicies = task_indicies & (df['subtask'] == task_subtask_dict[neem_id][task][i-1])
-                    for p in range(min([i,n_prev_subtasks])):
-                        subtask1_name = f'prev_{p+1}_subtask_type'
+                        df['next_subtask_type'][prev_subtask_indicies] = df['subtask_type'][df_task_subtask_indicies].values[0]
+
+                    p = 0
+                    used_p = 0
+                    done = False
+                    while not done and i > 0:
+                        subtask1_name = f'prev_{used_p+1}_subtask_type'
                         subtask2_name = 'subtask_type' if p == 0 else f'prev_{p}_subtask_type'
-                        df[subtask1_name][df_task_subtask_indicies] = df[subtask2_name][prev_subtask_indicies].values[0]
-                    if i != len(task_subtask_dict[neem_id][task])-1:
-                        next_subtask_indicies = task_indicies & (df['subtask'] == task_subtask_dict[neem_id][task][i+1])
-                        df['next_subtask_type'][df_task_subtask_indicies] = df['subtask_type'][next_subtask_indicies].values[0]
-                    # else:
-                    #     print("last subtask")
-                    #     prev_task_end_time = df['task_end'][df_task_subtask_indicies].values[0]
-                    #     print(f"{prev_task_end_time:f}")
-                    #     print(f"subtask_end = {df['subtask_end'][df_task_subtask_indicies].values[0]:f}")
+                        if df['subtask_end'][prev_subtask_indicies].values[0] <= df['subtask_start'][df_task_subtask_indicies].values[0] and \
+                            used_p < n_prev_subtasks:
+                            df[subtask1_name][df_task_subtask_indicies] = df[subtask2_name][prev_subtask_indicies].values[0]
+                            used_p += 1
+                        p += 1
+                        if (used_p == n_prev_tasks) or p == i:
+                            done = True
+                    prev_subtask_indicies = df_task_subtask_indicies
+                
+                if prev_task_indicies is None:
+                    prev_task_indicies = task_indicies
+                    continue
+
+                # Tasks
+                done = False
+                p = 0
+                used_p = 0
+                parent_i = 0
+                while not done:
+                    task1_name = f'prev_{used_p+1}_task_type'
+                    task2_name = 'task_type' if p == 0 else f'prev_{p}_task_type'
+                    if df['task_end'][prev_task_indicies].values[0] <= df['task_start'][task_indicies].values[0] and \
+                        used_p < n_prev_tasks:
+                        df[task1_name][task_indicies] = df[task2_name][prev_task_indicies].values[0]
+                        used_p += 1
+                    task1_name = f'parent_{parent_i+1}_task_type'
+                    task2_name = 'task_type' if p == 0 else f'parent_{p}_task_type'
+                    if df['task_end'][prev_task_indicies].values[0] >= df['task_end'][task_indicies].values[0] and \
+                        df['task_start'][prev_task_indicies].values[0] <= df['task_start'][task_indicies].values[0] and \
+                            parent_i < n_parent_tasks:
+                        df[task1_name][task_indicies] = df[task2_name][prev_task_indicies].values[0]
+                        # print(f"{task1_name} {df[task1_name][task_indicies].values[0]}")
+                        # print(f"child {df['task_type'][task_indicies].values[0]}")
+                        parent_i += 1
+                    p += 1
+                    if (used_p == n_prev_tasks and parent_i == n_parent_tasks) or p == j:
+                        done = True
+
+                df['next_task_type'][prev_task_indicies] = df['task_type'][task_indicies].values[0]
+                prev_task_indicies = task_indicies
 
         # prev task type
         # df.groupby('neem_id').group

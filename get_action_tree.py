@@ -56,9 +56,10 @@ def get_value_from_sql(table_name: str, engine:Engine, col_names: Optional[list]
         return result
 
 def infer_and_fit_model_from_df(df, remove_subtasks=False):
-    for cname in ['task', 'subtask', 'neem_id', 'task_duration', 'subtask_duration', 'participant', 'neem_name', 'neem_desc']:
+    for cname in ['task', 'subtask', 'neem_id', 'task_duration', 'subtask_duration', 'task_start', 'task_end',
+                  'subtask_start', 'subtask_end', 'participant', 'neem_name', 'neem_desc', 'created_by', 'activity']:
         if cname in df.columns:
-            df.drop(columns=f'{cname}', inplace=True)
+            df.drop(columns=f'{cname}', inplace=True, errors='ignore')
     if remove_subtasks:
         for col in df.columns:
             if 'subtask' in col:
@@ -111,43 +112,72 @@ def get_row_mode(df):
     return {cols[i]: {most_frequent_values[i]} for i in range(len(cols))}
 
 def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe=False, use_sql=False, engine=None):
-    top_task = Node(current_data['prev_1_task_type'])
-    task = Node(current_data['task_type'], parent=top_task)
-    # prev_subtask = Node(current_data['prev_subtask_type'], parent=task)
-    subtask = Node(str(current_data['subtask_type']), parent=task)
+    top_task = Node('None')
+    task = None
+    for i in range(n_prev_tasks, 1, -1):
+        if i == n_prev_tasks:
+            task = Node(current_data[f'prev_{i}_task_type'], parent=top_task)
+        else:
+            task = Node(current_data[f'prev_{i}_task_type'], parent=task.parent)
+    if task is not None:
+        task = Node(current_data['task_type'], parent=task.parent)
+    else:
+        task = Node(current_data['task_type'], parent=top_task)
+    if use_subtasks:
+        # prev_subtask = Node(current_data['prev_subtask_type'], parent=task)
+        subtask = Node(str(current_data['subtask_type']), parent=task)
     next_task = task
-
     task_count = 0
+
+    if use_subtasks:
+        cond = lambda x: not (('None' in x['next_task_type'] and 'None' in x['next_subtask_type']) or task_count > 40)
+    else:
+        cond = lambda x: not (('None' in x['next_task_type'] and 'None' in x['parent_1_task_type']) or task_count > 40)
+
     j = 1
     k = 1
-    while not (('None' in current_data['next_task_type'] and 'None' in current_data['next_subtask_type']) or task_count > 40):
+    while cond(current_data):
         print(current_data)
-        if len(current_data['next_subtask_type']) > 1:
-            print(current_data['next_subtask_type'])
-            exit()
-        if 'None' in current_data['next_subtask_type']:
+        if use_subtasks:
+            if len(current_data['next_subtask_type']) > 1:
+                print(current_data['next_subtask_type'])
+                exit()
+        if use_subtasks:
+            sub_cond = 'None' in current_data['next_subtask_type']
+        else:
+            sub_cond = True 
+        if sub_cond:
             for i in range(n_prev_tasks, 1, -1):
                 current_data[f'prev_{i}_task_type'] = current_data[f'prev_{i-1}_task_type']
             current_data['prev_1_task_type'] = current_data['task_type']
-            current_data['task_type'] = current_data['next_task_type']
-            next_task = Node(str(current_data['task_type']) + str(j), parent=next_task.parent)
+            if 'None' not in current_data['next_task_type']:
+                current_data['task_type'] = current_data['next_task_type']
+                next_task = Node(str(current_data['task_type']) + str(j), parent=next_task.parent)
+            else:
+                current_data['task_type'] = current_data['parent_1_task_type']
+                for i in range(1, n_prev_tasks + 1):
+                    del current_data[f'prev_{i}_task_type']
             j += 1
             del current_data['next_task_type']
-            for i in range(1, n_prev_subtasks + 1):
-                current_data[f'prev_{i}_subtask_type'] = {'None'}
-            del current_data['subtask_type']
+            for i in range(1, n_parent_tasks + 1):
+                del current_data[f'parent_{i}_task_type']
+            if use_subtasks:
+                for i in range(1, n_prev_subtasks + 1):
+                    current_data[f'prev_{i}_subtask_type'] = {'None'}
+                del current_data['subtask_type']
         else:
             for i in range(n_prev_subtasks, 1, -1):
                 current_data[f'prev_{i}_subtask_type'] = current_data[f'prev_{i-1}_subtask_type']
             current_data['prev_1_subtask_type'] = current_data['subtask_type']
             current_data['subtask_type'] = current_data['next_subtask_type']
 
-        del current_data['next_subtask_type']
-        current_data['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
-                                        'soma:Plate', 'soma:Spoon', 'soma:Cereal',
-                                        'soma:Fork', 'soma:Cup'}
-        del current_data['subtask_param']
-        del current_data['subtask_state']
+        if use_subtasks:
+            del current_data['next_subtask_type']
+            current_data['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
+                                            'soma:Plate', 'soma:Spoon', 'soma:Cereal',
+                                            'soma:Fork', 'soma:Cup'}
+            del current_data['subtask_param']
+            del current_data['subtask_state']
         del current_data['task_state']
         # del current_data['neem_name']
         # del current_data['neem_desc']
@@ -169,14 +199,63 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
         else:
             mpe, likelihood = model.mpe(current_data)
             current_data = mpe[0]
-        if 'None' not in current_data['subtask_type']:
-            subtask = Node(str(current_data['subtask_type']) + str(k), parent=next_task)
-            k += 1
+        if use_subtasks:
+            if 'None' not in current_data['subtask_type']:
+                subtask = Node(str(current_data['subtask_type']) + str(k), parent=next_task)
+                k += 1
         task_count += 1
 
     for pre, fill, node in RenderTree(top_task):
         print("%s%s" % (pre, node.name))
     DotExporter(top_task).to_picture(f"{tree_name}.png")
+
+def get_prev_task(df, current_task, current_start, current_end, heirarchy, task_type):
+        task_idx = np.where(df[f'{task_type}'] == current_task)[0]
+        if len(task_idx) == 0:
+            raise ValueError(f"task {current_task} not found in dataframe")
+        task_idx = task_idx[0]
+        if heirarchy == 'prev':
+            cond = df[f'{task_type}_end'][:task_idx] <= current_start
+        elif heirarchy == 'parent':
+            cond = (df[f'{task_type}_end'][:task_idx] >= current_end) & (df[f'{task_type}_start'][:task_idx] <= current_start)
+        all_prev_indicies = np.where(cond)[0]
+        if len(all_prev_indicies) == 0:
+            return None, None
+        prev_task_indicies = all_prev_indicies[-1]
+        prev_task = df[f'{task_type}'][prev_task_indicies]
+        prev_task_type = df[f'{task_type}_type'][prev_task_indicies]
+        return prev_task, prev_task_type
+
+def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies, task_type='task', df_to_modify=None):
+    """AI is creating summary for set_old_tasks
+
+    Args:
+        df ([type]): [end sorted task dataframe]
+        task_indicies ([type]): [description]
+        heirarchy ([type]): [description]
+        df_to_modify ([type], optional): [description]. Defaults to None.
+        modify_indicies ([type], optional): [description]. Defaults to None.
+    """
+    if df_to_modify is None:
+        df_to_modify = df.copy(deep=False)
+    current_start = df_to_modify[f'{task_type}_start'][current_indicies].values[0]
+    current_end = df_to_modify[f'{task_type}_end'][current_indicies].values[0]
+    current_task = df_to_modify[f'{task_type}'][current_indicies].values[0]
+    current_task_type = df_to_modify[f'{task_type}_type'][current_indicies].values[0]
+    # find first old task
+    prev_task, prev_task_type = get_prev_task(df, current_task, current_start, current_end, heirarchy, task_type)
+    if prev_task is None:
+        return
+    df_to_modify[f'{heirarchy}_1_{task_type}_type'][current_indicies] = prev_task_type
+    prev_task_indicies = (df_to_modify[f'{task_type}'] == prev_task)  & neem_indicies
+    # set next task type
+    if heirarchy == 'prev':
+        if df_to_modify[f'next_{task_type}_type'][prev_task_indicies].values[0] == 'None':
+            df_to_modify[f'next_{task_type}_type'][prev_task_indicies] = current_task_type
+    # find all older tasks
+    for i in range(2, n_tasks + 1):
+        df_to_modify[f'{heirarchy}_{i}_{task_type}_type'][current_indicies] =\
+              df_to_modify[f'{heirarchy}_{i-1}_{task_type}_type'][prev_task_indicies].values[0]
 
 
 if __name__ == '__main__':
@@ -204,22 +283,26 @@ if __name__ == '__main__':
     logger = logging.getLogger()
     logger.setLevel(logging.WARNING)
 
+    use_subtasks = False
     load_df = True
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
-    n_prev_subtasks = 3
-    n_prev_tasks = 3
+    n_prev_subtasks = 0
+    n_prev_tasks = 1
     n_top_tasks = 2
     n_parent_tasks = 1
+    n_parent_subtasks = 0
     plot_tasks = False
     
     if plot_tasks:
         df = pd.read_pickle('df.pkl')
         print(df.head())
         use_type = True
-        subtasks = df['subtask_type'].unique()
-        colors_dict = {subtasks[i]: f'C{i}' for i in range(len(subtasks))}
+        if use_subtasks:
+            subtasks = df['subtask_type'].unique()
+            colors_dict = {subtasks[i]: f'C{i}' for i in range(len(subtasks))}
+
         for neem_id in df['neem_id'].unique():
             curr_df = df[df['neem_id'] == neem_id]
 
@@ -227,21 +310,25 @@ if __name__ == '__main__':
             end = dict()
             lineoffsets = dict()
             linelengths = dict()
-            st_data = curr_df['subtask_type'].values if use_type else curr_df['subtask'].values
+
+            if use_subtasks:
+                st_data = curr_df['subtask_type'].values if use_type else curr_df['subtask'].values
+                neg_vals = curr_df[f'subtask_start'] < 0
+                curr_df[f'subtask_start'][neg_vals] = curr_df[f'task_start'][neg_vals]
+                neg_vals = curr_df[f'subtask_end'] < 0
+                curr_df[f'subtask_end'][neg_vals] = curr_df[f'task_end'][neg_vals]
+
             t_data = curr_df['task_type'].values if use_type else curr_df['task'].values
             ut_data = pd.DataFrame(t_data)[0].unique()
             # print(curr_df.head())
             fig = go.Figure()
-            neg_vals = curr_df[f'subtask_start'] < 0
-            curr_df[f'subtask_start'][neg_vals] = curr_df[f'task_start'][neg_vals]
-            neg_vals = curr_df[f'subtask_end'] < 0
-            curr_df[f'subtask_end'][neg_vals] = curr_df[f'task_end'][neg_vals]
 
             fig = px.timeline(curr_df, x_start=pd.to_datetime(curr_df[f'task_start'], unit='s'),
                                 x_end=pd.to_datetime(curr_df[f'task_end'], unit='s'),
                                     y=f'task_type',
                                     color=f'task_type',
-                                    hover_data={'subtask':True, 'task':True, 'participant_type':True},
+                                    hover_data={'task':True, 'prev_1_task_type':True, 'parent_1_task_type':True, 'next_task_type':True},
+                                    # hover_data={'subtask':True, 'task':True, 'participant_type':True},
                                     # text=f'subtask_type',
                                     title=f"tasks for {curr_df['neem_name'].values[0]}")
             close_vals = [1]
@@ -264,24 +351,33 @@ if __name__ == '__main__':
             fig.show()
             # exit()
         exit()
+    if load_df:
+        df = pd.read_pickle('df.pkl')
+        print(df.head())
     else:
         # Read sql file
-        with open('tasks_subtasks_and_params.sql', 'r') as f:
+        if use_subtasks:
+            sql_query_file = 'tasks_subtasks_and_params.sql'
+        else:
+            sql_query_file = 'tasks.sql'
+        with open(sql_query_file, 'r') as f:
             sql_cmd = f.read()
 
         with engine.connect() as conn:
             df = pd.read_sql(text(sql_cmd), conn)
-        for cname in ['task', 'subtask']:
+        task_types = ['task', 'subtask'] if use_subtasks else ['task']
+        for cname in task_types:
             df[f'{cname}_duration'] = np.abs(np.maximum(0, df[f'{cname}_end']) - np.maximum(0, df[f'{cname}_start']))
             # df.drop(columns=[f'{cname}_start', f'{cname}_end'], inplace=True)
         print(df.head())
 
         # Get all subtasks for each task from the dataframe.
-        # for i in range(1, n_prev_subtasks + 1):
-        #     df[f'prev_{i}_subtask_type'] = df.groupby('task_type')['subtask_type'].shift(i)
-        for i in range(1, n_prev_subtasks + 1):
-            df[f'prev_{i}_subtask_type'] = 'None'
-        df['next_subtask_type'] = 'None'
+        if use_subtasks:
+            for i in range(1, n_prev_subtasks + 1):
+                df[f'prev_{i}_subtask_type'] = 'None'
+            df['next_subtask_type'] = 'None'
+            for i in range(1, n_parent_subtasks + 1):
+                df[f'parent_{i}_subtask_type'] = 'None'
         for i in range(1, n_prev_tasks + 1):
             df[f'prev_{i}_task_type'] = 'None'
         df['next_task_type'] = 'None'
@@ -311,10 +407,11 @@ if __name__ == '__main__':
                                     'soma:Fork', 'soma:Cup'}
     evidence = dict()
     # evidence['task_type'] = {'soma:PhysicalTask'}
-    evidence['subtask_type'] = {'soma:LookingAt'}
-    evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
-                                    'soma:Plate', 'soma:Spoon', 'soma:Cereal',
-                                    'soma:Fork', 'soma:Cup'}
+    evidence['top_1_task_type'] = {'soma:Transporting'}
+    # evidence['task_type'] = {'soma:PickingUp'}
+    # evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
+    #                                 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
+    #                                 'soma:Fork', 'soma:Cup'}
     # evidence['subtask_param'] = {'None'}
     # evidence['subtask_state'] = {'soma:ExecutionState_Succeeded'}
     # evidence['task_state'] = {'soma:ExecutionState_Succeeded'}
@@ -333,80 +430,35 @@ if __name__ == '__main__':
         model, variables = infer_and_fit_model_from_df(df)
         print(df)
     elif load_from_sql:
-        task_subtask_dict = dict()
         start_time = time()
         for neem_id in df['neem_id'].unique():
-            task_subtask_dict[neem_id] = dict()
             neem_indicies = df['neem_id'] == neem_id
             all_tasks = df[neem_indicies]['task'].unique()
-            prev_task_indicies = None
-            prev_task_end_time = 0
+            # end sorted dataframe
+            end_sorted_df = df[neem_indicies].sort_values(by=['task_end'], ascending=True, ignore_index=True)
             for j, task in enumerate(all_tasks):
 
                 task_indicies = neem_indicies & (df['task'] == task)
-                task_subtask_dict[neem_id][task] = df['subtask'][task_indicies].unique().tolist()
 
                 if j < n_top_tasks:
                     task_type = df['task_type'][task_indicies].values[0]
                     df[f'top_{j+1}_task_type'][neem_indicies] = task_type
                 
                 # Subtasks
-                for i, subtask in enumerate(task_subtask_dict[neem_id][task]):                        
-                    df_task_subtask_indicies = task_indicies & (df['subtask'] == subtask)
-                    if i > 0:
-                        df['next_subtask_type'][prev_subtask_indicies] = df['subtask_type'][df_task_subtask_indicies].values[0]
-
-                    p = 0
-                    used_p = 0
-                    done = False
-                    while not done and i > 0:
-                        subtask1_name = f'prev_{used_p+1}_subtask_type'
-                        subtask2_name = 'subtask_type' if p == 0 else f'prev_{p}_subtask_type'
-                        if df['subtask_end'][prev_subtask_indicies].values[0] <= df['subtask_start'][df_task_subtask_indicies].values[0] and \
-                            used_p < n_prev_subtasks:
-                            df[subtask1_name][df_task_subtask_indicies] = df[subtask2_name][prev_subtask_indicies].values[0]
-                            used_p += 1
-                        p += 1
-                        if (used_p == n_prev_tasks) or p == i:
-                            done = True
-                    prev_subtask_indicies = df_task_subtask_indicies
-                
-                if prev_task_indicies is None:
-                    prev_task_indicies = task_indicies
-                    continue
+                if use_subtasks:
+                    for i, subtask in enumerate(df['subtask'][task_indicies].unique().tolist()):
+                        if i > 0:
+                            df_task_subtask_indicies = task_indicies & (df['subtask'] == subtask)
+                            set_old_tasks(df[task_indicies], df_task_subtask_indicies, 'prev', n_prev_subtasks, neem_indicies, task_type='subtask')
+                            if n_parent_subtasks > 0:
+                                set_old_tasks(df[task_indicies], df_task_subtask_indicies, 'parent', n_parent_subtasks, neem_indicies, task_type='subtask')
 
                 # Tasks
-                done = False
-                p = 0
-                used_p = 0
-                parent_i = 0
-                while not done:
-                    task1_name = f'prev_{used_p+1}_task_type'
-                    task2_name = 'task_type' if p == 0 else f'prev_{p}_task_type'
-                    if df['task_end'][prev_task_indicies].values[0] <= df['task_start'][task_indicies].values[0] and \
-                        used_p < n_prev_tasks:
-                        df[task1_name][task_indicies] = df[task2_name][prev_task_indicies].values[0]
-                        used_p += 1
-                    task1_name = f'parent_{parent_i+1}_task_type'
-                    task2_name = 'task_type' if p == 0 else f'parent_{p}_task_type'
-                    if df['task_end'][prev_task_indicies].values[0] >= df['task_end'][task_indicies].values[0] and \
-                        df['task_start'][prev_task_indicies].values[0] <= df['task_start'][task_indicies].values[0] and \
-                            parent_i < n_parent_tasks:
-                        df[task1_name][task_indicies] = df[task2_name][prev_task_indicies].values[0]
-                        # print(f"{task1_name} {df[task1_name][task_indicies].values[0]}")
-                        # print(f"child {df['task_type'][task_indicies].values[0]}")
-                        parent_i += 1
-                    p += 1
-                    if (used_p == n_prev_tasks and parent_i == n_parent_tasks) or p == j:
-                        done = True
+                if j > 0:
+                    set_old_tasks(end_sorted_df, task_indicies, 'prev', n_prev_tasks, neem_indicies, task_type='task', df_to_modify=df)
+                    if n_parent_tasks > 0:
+                        set_old_tasks(df, task_indicies, 'parent', n_parent_tasks, neem_indicies, task_type='task')
 
-                df['next_task_type'][prev_task_indicies] = df['task_type'][task_indicies].values[0]
-                prev_task_indicies = task_indicies
-
-        # prev task type
-        # df.groupby('neem_id').group
-        # next task type
-        # df['next_task_type'] = df.groupby('neem_id')['task_type'].shift(-1)
         print(f"Time to get task subtask dict: {time() - start_time}")
         # for i in range(1, n_prev_subtasks + 1):
         #     df[f'prev_{i}_subtask_type'] = df.groupby('task_type')['subtask_type'].shift(i)

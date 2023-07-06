@@ -111,10 +111,10 @@ def get_row_mode(df):
     most_frequent_values = unique_values[np.argmax(counts)]
     return {cols[i]: {most_frequent_values[i]} for i in range(len(cols))}
 
-def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe=False, use_sql=False, engine=None):
+def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe=False, use_sql=False, engine=None, df=None, plot=False):
     top_task = Node('None')
     task = None
-    for i in range(n_prev_tasks, 1, -1):
+    for i in range(n_prev_tasks, 0, -1):
         if i == n_prev_tasks:
             task = Node(current_data[f'prev_{i}_task_type'], parent=top_task)
         else:
@@ -132,10 +132,14 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
     if use_subtasks:
         cond = lambda x: not (('None' in x['next_task_type'] and 'None' in x['next_subtask_type']) or task_count > 40)
     else:
-        cond = lambda x: not (('None' in x['next_task_type'] and 'None' in x['parent_1_task_type']) or task_count > 40)
+        if n_parent_tasks > 0:
+            cond = lambda x: not (('None' in x['next_task_type'] and 'None' in x['parent_1_task_type']) or task_count > 40)
+        else:
+            cond = lambda x: not (('None' in x['next_task_type']) or task_count > 40)
 
     j = 1
     k = 1
+    dataframe = df
     while cond(current_data):
         print(current_data)
         if use_subtasks:
@@ -152,7 +156,7 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
             current_data['prev_1_task_type'] = current_data['task_type']
             if 'None' not in current_data['next_task_type']:
                 current_data['task_type'] = current_data['next_task_type']
-                next_task = Node(str(current_data['task_type']) + str(j), parent=next_task.parent)
+                next_task = Node(str(current_data['task_type']) + f" {j}", parent=next_task.parent)
             else:
                 current_data['task_type'] = current_data['parent_1_task_type']
                 for i in range(1, n_prev_tasks + 1):
@@ -183,13 +187,9 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
         # del current_data['neem_desc']
         # current_data['activity'] = {'Kitchen activity'}
         # current_data['environment'] = {'Kitchen'}
-        
+        prev_data = current_data.copy()
         if use_dataframe:
-            df_filtered, df_mode = filter_df_from_dict(df, current_data, return_mode=True)
-            print(df_mode)
-            df_mode = df_mode.to_dict(orient='list')
-            df_mode = {k: {v[0]} for k, v in df_mode.items()}
-            current_data = df_mode
+            dataframe, current_data = filter_df_from_dict(df, current_data, return_mode=True)
         elif use_sql:
             sql_cmd = get_sql_query_from_dict(current_data, 'task_tree')
             with engine.connect() as conn:
@@ -199,9 +199,19 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
         else:
             mpe, likelihood = model.mpe(current_data)
             current_data = mpe[0]
+        
+        if plot and (use_dataframe or use_sql) and cond(current_data):
+            title = f"{j}_EVIDENCE::"
+            for ti, (key, val) in enumerate(prev_data.items()):
+                title += f"{key}={val}, "
+                if ti % 2 == 0 and ti != 0:
+                    title += '\n'
+
+            plot_df_stats(dataframe, title=title, filename=j, save=True)
+
         if use_subtasks:
             if 'None' not in current_data['subtask_type']:
-                subtask = Node(str(current_data['subtask_type']) + str(k), parent=next_task)
+                subtask = Node(str(current_data['subtask_type']) + f" {k}", parent=next_task)
                 k += 1
         task_count += 1
 
@@ -257,6 +267,16 @@ def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies, task_
         df_to_modify[f'{heirarchy}_{i}_{task_type}_type'][current_indicies] =\
               df_to_modify[f'{heirarchy}_{i-1}_{task_type}_type'][prev_task_indicies].values[0]
 
+def plot_df_stats(df, title='df_stats', filename='stats', save=False):
+    ax = df.apply(pd.value_counts).plot(kind='bar', subplots=True, figsize=(30, 20), fontsize=15, rot=45)
+    for a in ax:
+        a.set_title(a.get_title(), fontsize=25)
+        a.legend(fontsize=20)
+    fig = ax[0].get_figure()
+    fig.suptitle(title, fontsize=30)
+    if save:
+        fig.savefig(f"{filename}.png")
+
 
 if __name__ == '__main__':
     # Parse command line arguments
@@ -284,13 +304,13 @@ if __name__ == '__main__':
     logger.setLevel(logging.WARNING)
 
     use_subtasks = False
-    load_df = True
+    load_df = False
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
     n_prev_subtasks = 0
-    n_prev_tasks = 1
-    n_top_tasks = 2
+    n_prev_tasks = 3
+    n_top_tasks = 0
     n_parent_tasks = 1
     n_parent_subtasks = 0
     plot_tasks = False
@@ -407,8 +427,8 @@ if __name__ == '__main__':
                                     'soma:Fork', 'soma:Cup'}
     evidence = dict()
     # evidence['task_type'] = {'soma:PhysicalTask'}
-    evidence['top_1_task_type'] = {'soma:Transporting'}
-    # evidence['task_type'] = {'soma:PickingUp'}
+    # evidence['top_1_task_type'] = {'soma:Transporting'}
+    evidence['task_type'] = {'soma:PickingUp'}
     # evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
     #                                 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
     #                                 'soma:Fork', 'soma:Cup'}
@@ -482,17 +502,22 @@ if __name__ == '__main__':
         # model = jpt.trees.JPT.load_from_sql("neem_action_tree_looper_16_5_2023.jpt")
         # model = jpt.trees.JPT.load_from_sql("neem_action_tree_2_prev_looper_19_5_2023.jpt")
         model = jpt.trees.JPT.load_from_sql("neem_action_tree_3_prev_23_5_2023.jpt")
-
+    
+    print("Mean Log Likelihood = ", np.mean(np.log(model.likelihood(df))))
+    # exit()
     mpe, likelihood = model.mpe(model.bind(evidence))
+
     # print("mpe = ", mpe[0])
 
     if infer_from_df:
-        df_filtered, df_mode = filter_df_from_dict(df, evidence, return_mode=True)
-        df_filtered.apply(pd.value_counts).plot(kind='bar', subplots=True)
+        plot_df_stats(df, title='df_stats', filename='df_stats', save=True)
         df.to_sql('task_tree', engine, if_exists='replace', index=False)
-        get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine)
-        # get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree')
-        plt.show()
+        df_filtered, df_mode = filter_df_from_dict(df, evidence, return_mode=True)
+        plot_df_stats(df_filtered, title=f"1_{evidence}", filename='1', save=True)
+        # df.to_sql('task_tree', engine, if_exists='replace', index=False)
+        # get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine)
+        get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True)
+        # plt.show()
 
     get_task_tree(mpe[0], model=model)
 

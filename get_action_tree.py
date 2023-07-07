@@ -183,6 +183,8 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
             del current_data['subtask_param']
             del current_data['subtask_state']
         del current_data['task_state']
+        if use_participant:
+            current_data['participant_type'] = {'None', 'soma:Milk'}
         # del current_data['neem_name']
         # del current_data['neem_desc']
         # current_data['activity'] = {'Kitchen activity'}
@@ -304,7 +306,8 @@ if __name__ == '__main__':
     logger.setLevel(logging.WARNING)
 
     use_subtasks = False
-    load_df = False
+    use_participant = True
+    load_df = True
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
@@ -378,6 +381,8 @@ if __name__ == '__main__':
         # Read sql file
         if use_subtasks:
             sql_query_file = 'tasks_subtasks_and_params.sql'
+        elif use_participant:
+            sql_query_file = 'tasks_with_participant.sql'
         else:
             sql_query_file = 'tasks.sql'
         with open(sql_query_file, 'r') as f:
@@ -428,7 +433,9 @@ if __name__ == '__main__':
     evidence = dict()
     # evidence['task_type'] = {'soma:PhysicalTask'}
     # evidence['top_1_task_type'] = {'soma:Transporting'}
+    # evidence['prev_3_task_type'] = {'None'}
     evidence['task_type'] = {'soma:PickingUp'}
+    evidence['participant_type'] = {'soma:Milk'}
     # evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
     #                                 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
     #                                 'soma:Fork', 'soma:Cup'}

@@ -28,11 +28,19 @@ Inner JOIN soma_hasIntervalBegin task_ib on task_ti.dul_TimeInterval_o = task_ib
 Inner JOIN soma_hasIntervalBegin subtask_ib on subtask_ti.dul_TimeInterval_o = subtask_ib.dul_TimeInterval_s and subtask_ti.neem_id = subtask_ib.neem_id
 Inner JOIN soma_hasIntervalEnd task_ie on task_ti.dul_TimeInterval_o = task_ie.dul_TimeInterval_s and task_ti.neem_id = task_ie.neem_id
 Inner JOIN soma_hasIntervalEnd subtask_ie on subtask_ti.dul_TimeInterval_o = subtask_ie.dul_TimeInterval_s and subtask_ti.neem_id = subtask_ie.neem_id
-Left JOIN dul_hasParticipant as subtask_hp
-ON subtask_hp.dul_Event_s = subtask.dul_Action_s and subtask_hp.neem_id = subtask.neem_id
+
+-- Left JOIN dul_hasParticipant as subtask_hp
+-- ON subtask_hp.dul_Event_s = subtask.dul_Action_s and subtask_hp.neem_id = subtask.neem_id
+-- Left JOIN rdf_type as  participant_type
+-- ON subtask_hp.dul_Object_o = participant_type.s and participant_type.o != 'owl:NamedIndividual'
+--        and participant_type.neem_id = subtask_hp.neem_id
+
+Left JOIN dul_hasParticipant as task_hp
+ON task_hp.dul_Event_s = task.dul_Action_s and task_hp.neem_id = task.neem_id
 Left JOIN rdf_type as  participant_type
-ON subtask_hp.dul_Object_o = participant_type.s and participant_type.o != 'owl:NamedIndividual'
-       and participant_type.neem_id = subtask_hp.neem_id
+ON task_hp.dul_Object_o = participant_type.s and participant_type.o != 'owl:NamedIndividual'
+and participant_type.neem_id = task_hp.neem_id
+
 Left JOIN soma_hasExecutionState task_es on task_es.dul_Action_s = hc.dul_Entity_s and task_es.neem_id = hc.neem_id
 Left JOIN soma_hasExecutionState subtask_es on subtask_es.dul_Action_s = hc.dul_Entity_o and subtask_es.neem_id = hc.neem_id
 # Left join neems n on n._id = hc.neem_id

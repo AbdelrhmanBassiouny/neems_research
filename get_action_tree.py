@@ -111,18 +111,56 @@ def get_row_mode(df):
     most_frequent_values = unique_values[np.argmax(counts)]
     return {cols[i]: {most_frequent_values[i]} for i in range(len(cols))}
 
-def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe=False, use_sql=False, engine=None, df=None, plot=False):
-    top_task = Node('None')
+def set_color_shape(node):
+    attrs = []
+    attrs += [f'color={node.color}'] if hasattr(node, 'color') else []
+    attrs += [f'shape={node.shape}'] if hasattr(node, 'shape') else []
+    return ', '.join(attrs)
+
+def get_task_tree(current_data,
+                  model=None,
+                  tree_name='task_tree',
+                  use_dataframe=False,
+                  use_sql=False,
+                  engine=None,
+                  df=None,
+                  plot=False,
+                  enforce_success=False):
+    if n_top_tasks > 0:
+        top_task = Node(current_data['top_1_task_type'])
+    else:
+        top_task = Node('None')
     task = None
+    j = -n_prev_tasks
     for i in range(n_prev_tasks, 0, -1):
         if i == n_prev_tasks:
-            task = Node(current_data[f'prev_{i}_task_type'], parent=top_task)
+            task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=top_task)
         else:
-            task = Node(current_data[f'prev_{i}_task_type'], parent=task.parent)
+            task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=task.parent)
+        if f'prev_{i}_task_state' in current_data:
+            state = Node(str(current_data[f'prev_{i}_task_state']) + f" {j}", parent=task)
+            if 'soma:ExecutionState_Failed' in current_data[f'prev_{i}_task_state']:
+                task.color = 'red'
+                state.color = 'red'
+            if f'prev_{i}_task_failure_type' in current_data:
+                if 'None' not in current_data[f'prev_{i}_task_failure_type']:
+                    failure_type = Node(str(current_data[f'prev_{i}_task_failure_type']) + f" {j}", parent=state)
+                    failure_type.color = 'red'
+        j += 1
+
     if task is not None:
-        task = Node(current_data['task_type'], parent=task.parent)
+        task = Node(str(current_data['task_type']) + f" {j}", parent=task.parent)
     else:
-        task = Node(current_data['task_type'], parent=top_task)
+        task = Node((current_data['task_type']) + f" {j}", parent=top_task)
+    if f'task_state' in current_data:
+        state = Node(str(current_data[f'task_state']) + f" {j}", parent=task)
+        if f'task_failure_type' in current_data:
+            if 'None' not in current_data[f'task_failure_type']:
+                failure_type = Node(str(current_data[f'task_failure_type']) + f" {j}", parent=state)
+                task.color = 'red'
+                state.color = 'red'
+                failure_type.color = 'red'
+    j += 1
     if use_subtasks:
         # prev_subtask = Node(current_data['prev_subtask_type'], parent=task)
         subtask = Node(str(current_data['subtask_type']), parent=task)
@@ -137,7 +175,6 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
         else:
             cond = lambda x: not (('None' in x['next_task_type']) or task_count > 60)
 
-    j = 1
     k = 1
     dataframe = df
     while cond(current_data):
@@ -168,6 +205,15 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
                     for attrib in attributes:
                         current_data[f'task_{attrib}'] = current_data[f'next_task_{attrib}']
                 next_task = Node(str(current_data['task_type']) + f" {j}", parent=next_task.parent)
+                if f'task_state' in current_data and 'state' in attributes:
+                    state = Node(str(current_data[f'task_state']) + f" {j}", parent=next_task)
+                    if f'task_failure_type' in current_data and 'failure_type' in attributes:
+                        if 'None' not in current_data[f'task_failure_type']:
+                            failure_type = Node(str(current_data[f'task_failure_type']) + f" {j}", parent=state)
+                            next_task.color = 'red'
+                            state.color = 'red'
+                            failure_type.color = 'red'
+                j += 1
             # If next task is None, change current task and its attributes to the parent task and its attributes
             else:
                 current_data['task_type'] = current_data['parent_1_task_type']
@@ -179,7 +225,6 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
                     if attributes is not None:
                         for attrib in attributes:
                             del current_data[f'prev_{i}_task_{attrib}']
-            j += 1
             del current_data['next_task_type']
             if attributes is not None:
                 for attrib in attributes:
@@ -238,7 +283,8 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
                     del current_data[f'subtask_{attrib}']
         
         # enforce success state
-        current_data['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
+        if enforce_success:
+            current_data['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
                 
         # current_data['participant_type'].add('None')
         # del current_data['neem_name']
@@ -276,7 +322,7 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
 
     for pre, fill, node in RenderTree(top_task):
         print("%s%s" % (pre, node.name))
-    DotExporter(top_task).to_picture(f"{tree_name}.png")
+    DotExporter(top_task, nodeattrfunc=set_color_shape).to_picture(f"{tree_name}.png")
     
 
 def get_prev_task(df, current_task, current_start, current_end, heirarchy, task_type, task_attributes=None):
@@ -391,6 +437,7 @@ if __name__ == '__main__':
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
+    enforce_success = True
     n_prev_subtasks = 0
     n_prev_tasks = 3
     n_top_tasks = 1
@@ -616,10 +663,10 @@ if __name__ == '__main__':
         df_filtered, df_mode = filter_df_from_dict(df, evidence, return_mode=True)
         plot_df_stats(df_filtered, title=f"1_{evidence}", filename='1', save=True)
         # df.to_sql('task_tree', engine, if_exists='replace', index=False)
-        get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine)
-        # get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True)
+        # get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine, enforce_success=enforce_success)
+        get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True, enforce_success=enforce_success)
         # plt.show()
-    get_task_tree(mpe[0].to_json(), model=model)
+    get_task_tree(mpe[0].to_json(), model=model, enforce_success=enforce_success)
 
     
     

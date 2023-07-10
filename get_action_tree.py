@@ -135,7 +135,7 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
         if n_parent_tasks > 0:
             cond = lambda x: not (('None' in x['next_task_type'] and 'None' in x['parent_1_task_type']) or task_count > 40)
         else:
-            cond = lambda x: not (('None' in x['next_task_type']) or task_count > 40)
+            cond = lambda x: not (('None' in x['next_task_type']) or task_count > 60)
 
     j = 1
     k = 1
@@ -147,49 +147,106 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
                 print(current_data['next_subtask_type'])
                 exit()
         if use_subtasks:
-            sub_cond = 'None' in current_data['next_subtask_type']
+            change_task_cond = 'None' in current_data['next_subtask_type']
         else:
-            sub_cond = True 
-        if sub_cond:
+            change_task_cond = True 
+        if change_task_cond:
+            # Change the previous tasks and their attributes
             for i in range(n_prev_tasks, 1, -1):
                 current_data[f'prev_{i}_task_type'] = current_data[f'prev_{i-1}_task_type']
+                if attributes is not None:
+                    for attrib in attributes:
+                        current_data[f'prev_{i}_task_{attrib}'] = current_data[f'prev_{i-1}_task_{attrib}']
             current_data['prev_1_task_type'] = current_data['task_type']
+            if attributes is not None:
+                for attrib in attributes:
+                    current_data[f'prev_1_task_{attrib}'] = current_data[f'task_{attrib}']
+            # If next task is not None, change current task and its attributes to the next task and its attributes
             if 'None' not in current_data['next_task_type']:
                 current_data['task_type'] = current_data['next_task_type']
+                if attributes is not None:
+                    for attrib in attributes:
+                        current_data[f'task_{attrib}'] = current_data[f'next_task_{attrib}']
                 next_task = Node(str(current_data['task_type']) + f" {j}", parent=next_task.parent)
+            # If next task is None, change current task and its attributes to the parent task and its attributes
             else:
                 current_data['task_type'] = current_data['parent_1_task_type']
+                if attributes is not None:
+                    for attrib in attributes:
+                        current_data[f'task_{attrib}'] = current_data[f'parent_1_task_{attrib}']
                 for i in range(1, n_prev_tasks + 1):
                     del current_data[f'prev_{i}_task_type']
+                    if attributes is not None:
+                        for attrib in attributes:
+                            del current_data[f'prev_{i}_task_{attrib}']
             j += 1
             del current_data['next_task_type']
+            if attributes is not None:
+                for attrib in attributes:
+                    del current_data[f'next_task_{attrib}']
             for i in range(1, n_parent_tasks + 1):
                 del current_data[f'parent_{i}_task_type']
+                if attributes is not None:
+                    for attrib in attributes:
+                        del current_data[f'parent_{i}_task_{attrib}']
             if use_subtasks:
                 for i in range(1, n_prev_subtasks + 1):
                     current_data[f'prev_{i}_subtask_type'] = {'None'}
+                    if attributes is not None:
+                        for attrib in attributes:
+                            current_data[f'prev_{i}_subtask_{attrib}'] = {'None'}
                 del current_data['subtask_type']
+                if attributes is not None:
+                    for attrib in attributes:
+                        del current_data[f'subtask_{attrib}']
         else:
             for i in range(n_prev_subtasks, 1, -1):
                 current_data[f'prev_{i}_subtask_type'] = current_data[f'prev_{i-1}_subtask_type']
+                if attributes is not None:
+                    for attrib in attributes:
+                        current_data[f'prev_{i}_subtask_{attrib}'] = current_data[f'prev_{i-1}_subtask_{attrib}']
             current_data['prev_1_subtask_type'] = current_data['subtask_type']
+            if attributes is not None:
+                for attrib in attributes:
+                    current_data[f'prev_1_subtask_{attrib}'] = current_data[f'subtask_{attrib}']
             current_data['subtask_type'] = current_data['next_subtask_type']
+            if attributes is not None:
+                for attrib in attributes:
+                    current_data[f'subtask_{attrib}'] = current_data[f'next_subtask_{attrib}']
 
         if use_subtasks:
             del current_data['next_subtask_type']
             current_data['participant_type'] = {'None', 'soma:Bowl', 'soma:Milk',
                                             'soma:Plate', 'soma:Spoon', 'soma:Cereal',
                                             'soma:Fork', 'soma:Cup'}
-            del current_data['subtask_param']
-            del current_data['subtask_state']
-        del current_data['task_state']
-        if use_participant:
-            current_data['participant_type'] = {'None', 'soma:Milk'}
+            if attributes is not None:
+                for attrib in attributes:
+                    del current_data[f'next_subtask_{attrib}']
+
+        if attributes is not None:
+            for attrib in all_attributes:
+                if attrib not in attributes:
+                    if f'task_{attrib}' in current_data:
+                        del current_data[f'task_{attrib}']
+                    if f'subtask_{attrib}' in current_data:
+                        del current_data[f'subtask_{attrib}']
+        else:
+            for attrib in all_attributes:
+                if f'task_{attrib}' in current_data:
+                    del current_data[f'task_{attrib}']
+                if f'subtask_{attrib}' in current_data:
+                    del current_data[f'subtask_{attrib}']
+        
+        # enforce success state
+        current_data['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
+                
+        # current_data['participant_type'].add('None')
         # del current_data['neem_name']
         # del current_data['neem_desc']
         # current_data['activity'] = {'Kitchen activity'}
         # current_data['environment'] = {'Kitchen'}
         prev_data = current_data.copy()
+        print(current_data)
         if use_dataframe:
             dataframe, current_data = filter_df_from_dict(df, current_data, return_mode=True)
         elif use_sql:
@@ -199,8 +256,8 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
             # print(dataframe)
             current_data = get_row_mode(dataframe)
         else:
-            mpe, likelihood = model.mpe(current_data)
-            current_data = mpe[0]
+            mpe, likelihood = model.mpe(model.bind(current_data))
+            current_data = mpe[0].to_json()
         
         if plot and (use_dataframe or use_sql) and cond(current_data):
             title = f"{j}_EVIDENCE::"
@@ -220,8 +277,9 @@ def get_task_tree(current_data, model=None, tree_name='task_tree', use_dataframe
     for pre, fill, node in RenderTree(top_task):
         print("%s%s" % (pre, node.name))
     DotExporter(top_task).to_picture(f"{tree_name}.png")
+    
 
-def get_prev_task(df, current_task, current_start, current_end, heirarchy, task_type):
+def get_prev_task(df, current_task, current_start, current_end, heirarchy, task_type, task_attributes=None):
         task_idx = np.where(df[f'{task_type}'] == current_task)[0]
         if len(task_idx) == 0:
             raise ValueError(f"task {current_task} not found in dataframe")
@@ -232,13 +290,19 @@ def get_prev_task(df, current_task, current_start, current_end, heirarchy, task_
             cond = (df[f'{task_type}_end'][:task_idx] >= current_end) & (df[f'{task_type}_start'][:task_idx] <= current_start)
         all_prev_indicies = np.where(cond)[0]
         if len(all_prev_indicies) == 0:
-            return None, None
+            return None, None, None
         prev_task_indicies = all_prev_indicies[-1]
         prev_task = df[f'{task_type}'][prev_task_indicies]
         prev_task_type = df[f'{task_type}_type'][prev_task_indicies]
-        return prev_task, prev_task_type
+        prev_task_attributes = None
+        if task_attributes is not None:
+            prev_task_attributes = {attrib:df[f'{task_type}_{attrib}'][prev_task_indicies] for attrib in task_attributes}
+        return prev_task, prev_task_type, prev_task_attributes
 
-def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies, task_type='task', df_to_modify=None):
+def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies,
+                  task_type='task',
+                  df_to_modify=None,
+                  set_attribures=None):
     """AI is creating summary for set_old_tasks
 
     Args:
@@ -254,20 +318,33 @@ def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies, task_
     current_end = df_to_modify[f'{task_type}_end'][current_indicies].values[0]
     current_task = df_to_modify[f'{task_type}'][current_indicies].values[0]
     current_task_type = df_to_modify[f'{task_type}_type'][current_indicies].values[0]
+    current_task_attributes = {attrib: df_to_modify[f'{task_type}_{attrib}'][current_indicies].values[0]
+                               for attrib in set_attribures}
     # find first old task
-    prev_task, prev_task_type = get_prev_task(df, current_task, current_start, current_end, heirarchy, task_type)
+    prev_task, prev_task_type, prev_task_attributes = get_prev_task(df, current_task, current_start, current_end,
+                                                                  heirarchy, task_type, task_attributes=set_attribures)
     if prev_task is None:
         return
     df_to_modify[f'{heirarchy}_1_{task_type}_type'][current_indicies] = prev_task_type
+    if set_attribures is not None:
+        for attrib in set_attribures:
+            df_to_modify[f'{heirarchy}_1_{task_type}_{attrib}'][current_indicies] = prev_task_attributes[attrib]
     prev_task_indicies = (df_to_modify[f'{task_type}'] == prev_task)  & neem_indicies
     # set next task type
     if heirarchy == 'prev':
         if df_to_modify[f'next_{task_type}_type'][prev_task_indicies].values[0] == 'None':
             df_to_modify[f'next_{task_type}_type'][prev_task_indicies] = current_task_type
+            if set_attribures is not None:
+                for attrib in set_attribures:
+                    df_to_modify[f'next_{task_type}_{attrib}'][prev_task_indicies] = current_task_attributes[attrib]
     # find all older tasks
     for i in range(2, n_tasks + 1):
         df_to_modify[f'{heirarchy}_{i}_{task_type}_type'][current_indicies] =\
               df_to_modify[f'{heirarchy}_{i-1}_{task_type}_type'][prev_task_indicies].values[0]
+        if set_attribures is not None:
+            for attrib in set_attribures:
+                df_to_modify[f'{heirarchy}_{i}_{task_type}_{attrib}'][current_indicies] =\
+                    df_to_modify[f'{heirarchy}_{i-1}_{task_type}_{attrib}'][prev_task_indicies].values[0]
 
 def plot_df_stats(df, title='df_stats', filename='stats', save=False):
     ax = df.apply(pd.value_counts).plot(kind='bar', subplots=True, figsize=(30, 20), fontsize=15, rot=45)
@@ -306,14 +383,17 @@ if __name__ == '__main__':
     logger.setLevel(logging.WARNING)
 
     use_subtasks = False
-    use_participant = True
+    use_participant = False
+    attributes = None
+    all_attributes = ['participant_type', 'participant', 'param', 'state', 'failure_type']
+    attributes = ['state']
     load_df = True
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
     n_prev_subtasks = 0
     n_prev_tasks = 3
-    n_top_tasks = 0
+    n_top_tasks = 1
     n_parent_tasks = 1
     n_parent_subtasks = 0
     plot_tasks = False
@@ -383,6 +463,8 @@ if __name__ == '__main__':
             sql_query_file = 'tasks_subtasks_and_params.sql'
         elif use_participant:
             sql_query_file = 'tasks_with_participant.sql'
+        elif attributes is not None:
+            sql_query_file = 'tasks_all_attributes.sql'
         else:
             sql_query_file = 'tasks.sql'
         with open(sql_query_file, 'r') as f:
@@ -404,11 +486,20 @@ if __name__ == '__main__':
             for i in range(1, n_parent_subtasks + 1):
                 df[f'parent_{i}_subtask_type'] = 'None'
         for i in range(1, n_prev_tasks + 1):
+            if attributes is not None:
+                for attrib in attributes:
+                    df[f'prev_{i}_task_{attrib}'] = 'None'
             df[f'prev_{i}_task_type'] = 'None'
+        if attributes is not None:
+            for attrib in attributes:
+                df[f'next_task_{attrib}'] = 'None'
         df['next_task_type'] = 'None'
         for i in range(1, n_top_tasks + 1):
             df[f'top_{i}_task_type'] = 'None'
         for i in range(1, n_parent_tasks + 1):
+            if attributes is not None:
+                for attrib in attributes:
+                    df[f'parent_{i}_task_{attrib}'] = 'None'
             df[f'parent_{i}_task_type'] = 'None'
 
     evidence = dict()
@@ -432,10 +523,12 @@ if __name__ == '__main__':
                                     'soma:Fork', 'soma:Cup'}
     evidence = dict()
     # evidence['task_type'] = {'soma:PhysicalTask'}
-    # evidence['top_1_task_type'] = {'soma:Transporting'}
+    evidence['top_1_task_type'] = {'soma:Transporting'}
     # evidence['prev_3_task_type'] = {'None'}
-    evidence['task_type'] = {'soma:PickingUp'}
-    evidence['participant_type'] = {'soma:Milk'}
+    # evidence['task_type'] = {'soma:Fetching'}
+    # evidence['participant_type'] = {'soma:Milk'}
+    evidence['task_state'] = {'soma:ExecutionState_Failed'}
+    evidence['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
     # evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
     #                                 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
     #                                 'soma:Fork', 'soma:Cup'}
@@ -476,15 +569,15 @@ if __name__ == '__main__':
                     for i, subtask in enumerate(df['subtask'][task_indicies].unique().tolist()):
                         if i > 0:
                             df_task_subtask_indicies = task_indicies & (df['subtask'] == subtask)
-                            set_old_tasks(df[task_indicies], df_task_subtask_indicies, 'prev', n_prev_subtasks, neem_indicies, task_type='subtask')
+                            set_old_tasks(df[task_indicies], df_task_subtask_indicies, 'prev', n_prev_subtasks, neem_indicies, task_type='subtask', set_attribures=attributes)
                             if n_parent_subtasks > 0:
-                                set_old_tasks(df[task_indicies], df_task_subtask_indicies, 'parent', n_parent_subtasks, neem_indicies, task_type='subtask')
+                                set_old_tasks(df[task_indicies], df_task_subtask_indicies, 'parent', n_parent_subtasks, neem_indicies, task_type='subtask', set_attribures=attributes)
 
                 # Tasks
                 if j > 0:
-                    set_old_tasks(end_sorted_df, task_indicies, 'prev', n_prev_tasks, neem_indicies, task_type='task', df_to_modify=df)
+                    set_old_tasks(end_sorted_df, task_indicies, 'prev', n_prev_tasks, neem_indicies, task_type='task', df_to_modify=df, set_attribures=attributes)
                     if n_parent_tasks > 0:
-                        set_old_tasks(df, task_indicies, 'parent', n_parent_tasks, neem_indicies, task_type='task')
+                        set_old_tasks(df, task_indicies, 'parent', n_parent_tasks, neem_indicies, task_type='task', set_attribures=attributes)
 
         print(f"Time to get task subtask dict: {time() - start_time}")
         # for i in range(1, n_prev_subtasks + 1):
@@ -513,8 +606,9 @@ if __name__ == '__main__':
     print("Mean Log Likelihood = ", np.mean(np.log(model.likelihood(df))))
     # exit()
     mpe, likelihood = model.mpe(model.bind(evidence))
-
     # print("mpe = ", mpe[0])
+    # print(model.bind(mpe[0].to_json()))
+    # exit()
 
     if infer_from_df:
         plot_df_stats(df, title='df_stats', filename='df_stats', save=True)
@@ -522,11 +616,10 @@ if __name__ == '__main__':
         df_filtered, df_mode = filter_df_from_dict(df, evidence, return_mode=True)
         plot_df_stats(df_filtered, title=f"1_{evidence}", filename='1', save=True)
         # df.to_sql('task_tree', engine, if_exists='replace', index=False)
-        # get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine)
-        get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True)
+        get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine)
+        # get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True)
         # plt.show()
-
-    get_task_tree(mpe[0], model=model)
+    get_task_tree(mpe[0].to_json(), model=model)
 
     
     

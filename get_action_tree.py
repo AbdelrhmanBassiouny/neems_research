@@ -133,7 +133,10 @@ def get_task_tree(current_data,
     task = None
     j = -n_prev_tasks
     for i in range(n_prev_tasks, 0, -1):
-        if i == n_prev_tasks:
+        if 'None' in current_data[f'prev_{i}_task_type']:
+            j += 1
+            continue
+        if task is None:
             task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=top_task)
         else:
             task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=task.parent)
@@ -302,8 +305,9 @@ def get_task_tree(current_data,
             # print(dataframe)
             current_data = get_row_mode(dataframe)
         else:
-            mpe, likelihood = model.mpe(model.bind(current_data))
-            current_data = mpe[0].to_json()
+            evidence = model.bind(current_data) if enforce_success else current_data
+            mpe, likelihood = model.mpe(evidence)
+            current_data = mpe[0].to_json() if enforce_success else mpe[0]
         
         if plot and (use_dataframe or use_sql) and cond(current_data):
             title = f"{j}_EVIDENCE::"
@@ -432,12 +436,12 @@ if __name__ == '__main__':
     use_participant = False
     attributes = None
     all_attributes = ['participant_type', 'participant', 'param', 'state', 'failure_type']
-    attributes = ['state']
+    attributes = ['participant_type', 'state']
     load_df = True
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
-    enforce_success = True
+    enforce_success = False
     n_prev_subtasks = 0
     n_prev_tasks = 3
     n_top_tasks = 1
@@ -572,10 +576,10 @@ if __name__ == '__main__':
     # evidence['task_type'] = {'soma:PhysicalTask'}
     evidence['top_1_task_type'] = {'soma:Transporting'}
     # evidence['prev_3_task_type'] = {'None'}
-    # evidence['task_type'] = {'soma:Fetching'}
-    # evidence['participant_type'] = {'soma:Milk'}
-    evidence['task_state'] = {'soma:ExecutionState_Failed'}
-    evidence['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
+    evidence['task_type'] = {'soma:Opening'}
+    # evidence['next_task_participant_type'] = {'soma:Milk'}
+    # evidence['task_state'] = {'soma:ExecutionState_Failed'}
+    # evidence['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
     # evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
     #                                 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
     #                                 'soma:Fork', 'soma:Cup'}
@@ -645,10 +649,10 @@ if __name__ == '__main__':
         print("model size", model.number_of_parameters())
 
     else:
-        # model = jpt.trees.JPT.load_from_sql("/tmp/neem_action_tree.jpt")
-        # model = jpt.trees.JPT.load_from_sql("neem_action_tree_looper_16_5_2023.jpt")
-        # model = jpt.trees.JPT.load_from_sql("neem_action_tree_2_prev_looper_19_5_2023.jpt")
-        model = jpt.trees.JPT.load_from_sql("neem_action_tree_3_prev_23_5_2023.jpt")
+        # model = jpt.trees.JPT.load("/tmp/neem_action_tree.jpt")
+        # model = jpt.trees.JPT.load("neem_action_tree_looper_16_5_2023.jpt")
+        # model = jpt.trees.JPT.load("neem_action_tree_2_prev_looper_19_5_2023.jpt")
+        model = jpt.trees.JPT.load("neem_action_tree_3_prev_23_5_2023.jpt")
     
     print("Mean Log Likelihood = ", np.mean(np.log(model.likelihood(df))))
     # exit()
@@ -666,7 +670,9 @@ if __name__ == '__main__':
         # get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine, enforce_success=enforce_success)
         get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True, enforce_success=enforce_success)
         # plt.show()
-    get_task_tree(mpe[0].to_json(), model=model, enforce_success=enforce_success)
+
+    current_data = mpe[0].to_json() if enforce_success else mpe[0]
+    get_task_tree(current_data, model=model, enforce_success=enforce_success)
 
     
     

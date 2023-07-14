@@ -484,7 +484,7 @@ if __name__ == '__main__':
                                     hover_data={'task':True, 'prev_1_task_type':True, 'parent_1_task_type':True, 'next_task_type':True},
                                     # hover_data={'subtask':True, 'task':True, 'participant_type':True},
                                     # text=f'subtask_type',
-                                    title=f"tasks for {curr_df['neem_name'].values[0]}")
+                                    title=f"Tasks For {curr_df['neem_name'].values[0]}")
             close_vals = [1]
             while len(close_vals) > 0:
                 diff = np.diff(curr_df[f'task_start'])
@@ -502,8 +502,18 @@ if __name__ == '__main__':
             # fig.data[1].width=0.5 # update the width of the 'Actual' schedule bars (the second trace of the figure)
             # for i in range(1,len(fig.data)):
             #     fig.data[i].width = 0.5
+            fig.update_layout(
+                font_family="Courier New",
+                font_color="black",
+                font_size=20,
+                title_font_family="Times New Roman",
+                title_font_color="black",
+                title_font_size=30,
+                legend_title_font_color="black",
+                legend_title_font_size=24,
+            )
             fig.show()
-            # exit()
+            exit()
         exit()
     if load_df:
         df = pd.read_pickle('df.pkl')

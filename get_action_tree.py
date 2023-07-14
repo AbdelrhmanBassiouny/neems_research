@@ -66,7 +66,7 @@ def infer_and_fit_model_from_df(df, remove_subtasks=False):
                 df.drop(columns=col, inplace=True)
     variables = infer_from_dataframe(df, scale_numeric_types=False)
     # print(variables)
-    model = jpt.trees.JPT(variables, min_samples_leaf=0.00005)
+    model = jpt.trees.JPT(variables, min_samples_leaf=0.1) # 0.00005
     model.fit(df)
     return model, variables
 
@@ -208,14 +208,15 @@ def get_task_tree(current_data,
                     for attrib in attributes:
                         current_data[f'task_{attrib}'] = current_data[f'next_task_{attrib}']
                 next_task = Node(str(current_data['task_type']) + f" {j}", parent=next_task.parent)
-                if f'task_state' in current_data and 'state' in attributes:
-                    state = Node(str(current_data[f'task_state']) + f" {j}", parent=next_task)
-                    if f'task_failure_type' in current_data and 'failure_type' in attributes:
-                        if 'None' not in current_data[f'task_failure_type']:
-                            failure_type = Node(str(current_data[f'task_failure_type']) + f" {j}", parent=state)
-                            next_task.color = 'red'
-                            state.color = 'red'
-                            failure_type.color = 'red'
+                if attributes is not None:
+                    if f'task_state' in current_data and 'state' in attributes:
+                        state = Node(str(current_data[f'task_state']) + f" {j}", parent=next_task)
+                        if f'task_failure_type' in current_data and 'failure_type' in attributes:
+                            if 'None' not in current_data[f'task_failure_type']:
+                                failure_type = Node(str(current_data[f'task_failure_type']) + f" {j}", parent=state)
+                                next_task.color = 'red'
+                                state.color = 'red'
+                                failure_type.color = 'red'
                 j += 1
             # If next task is None, change current task and its attributes to the parent task and its attributes
             else:
@@ -368,8 +369,9 @@ def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies,
     current_end = df_to_modify[f'{task_type}_end'][current_indicies].values[0]
     current_task = df_to_modify[f'{task_type}'][current_indicies].values[0]
     current_task_type = df_to_modify[f'{task_type}_type'][current_indicies].values[0]
-    current_task_attributes = {attrib: df_to_modify[f'{task_type}_{attrib}'][current_indicies].values[0]
-                               for attrib in set_attribures}
+    if set_attribures is not None:
+        current_task_attributes = {attrib: df_to_modify[f'{task_type}_{attrib}'][current_indicies].values[0]
+                                for attrib in set_attribures}
     # find first old task
     prev_task, prev_task_type, prev_task_attributes = get_prev_task(df, current_task, current_start, current_end,
                                                                   heirarchy, task_type, task_attributes=set_attribures)
@@ -436,7 +438,7 @@ if __name__ == '__main__':
     use_participant = False
     attributes = None
     all_attributes = ['participant_type', 'participant', 'param', 'state', 'failure_type']
-    attributes = ['participant_type', 'state']
+    # attributes = ['participant_type', 'state']
     load_df = True
     load_from_sql = not load_df
     save_df = True
@@ -653,8 +655,8 @@ if __name__ == '__main__':
         model, variables = infer_and_fit_model_from_df(df)
         print("number_of_leaves = ", len(model.leaves))
         print(model.priors['environment'])
-        # model.plot(directory="/tmp/neem_action_tree", plotvars=variables)
-        model.save("/tmp/neem_action_tree.jpt")
+        # model.plot(directory="/tmp/predict_next_task", plotvars=variables)
+        model.save("/tmp/predict_next_task.jpt")
 
         print("model size", model.number_of_parameters())
 
@@ -665,6 +667,7 @@ if __name__ == '__main__':
         model = jpt.trees.JPT.load("neem_action_tree_3_prev_23_5_2023.jpt")
     
     print("Mean Log Likelihood = ", np.mean(np.log(model.likelihood(df))))
+    model.plot(directory="/tmp/predict_next_task")
     # exit()
     mpe, likelihood = model.mpe(model.bind(evidence))
     # print("mpe = ", mpe[0])

@@ -133,25 +133,25 @@ def get_task_tree(current_data,
     task = None
     j = -n_prev_tasks
     for i in range(n_prev_tasks, 0, -1):
-        if i == n_prev_tasks:
-            task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=top_task)
-        else:
-            task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=task.parent)
-        if f'prev_{i}_task_state' in current_data:
-            state = Node(str(current_data[f'prev_{i}_task_state']) + f" {j}", parent=task)
-            if 'soma:ExecutionState_Failed' in current_data[f'prev_{i}_task_state']:
-                task.color = 'red'
-                state.color = 'red'
-            if f'prev_{i}_task_failure_type' in current_data:
-                if 'None' not in current_data[f'prev_{i}_task_failure_type']:
-                    failure_type = Node(str(current_data[f'prev_{i}_task_failure_type']) + f" {j}", parent=state)
-                    failure_type.color = 'red'
+        # if i == n_prev_tasks:
+        #     task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=top_task)
+        # else:
+        #     task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=task.parent)
+        # if f'prev_{i}_task_state' in current_data:
+        #     state = Node(str(current_data[f'prev_{i}_task_state']) + f" {j}", parent=task)
+        #     if 'soma:ExecutionState_Failed' in current_data[f'prev_{i}_task_state']:
+        #         task.color = 'red'
+        #         state.color = 'red'
+        #     if f'prev_{i}_task_failure_type' in current_data:
+        #         if 'None' not in current_data[f'prev_{i}_task_failure_type']:
+        #             failure_type = Node(str(current_data[f'prev_{i}_task_failure_type']) + f" {j}", parent=state)
+        #             failure_type.color = 'red'
         j += 1
 
     if task is not None:
         task = Node(str(current_data['task_type']) + f" {j}", parent=task.parent)
     else:
-        task = Node((current_data['task_type']) + f" {j}", parent=top_task)
+        task = Node(str(current_data['task_type']) + f" {j}", parent=top_task)
     if f'task_state' in current_data:
         state = Node(str(current_data[f'task_state']) + f" {j}", parent=task)
         if f'task_failure_type' in current_data:

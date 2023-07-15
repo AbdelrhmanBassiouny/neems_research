@@ -66,7 +66,7 @@ def infer_and_fit_model_from_df(df, remove_subtasks=False):
                 df.drop(columns=col, inplace=True)
     variables = infer_from_dataframe(df, scale_numeric_types=False)
     # print(variables)
-    model = jpt.trees.JPT(variables, min_samples_leaf=0.00005)
+    model = jpt.trees.JPT(variables, min_samples_leaf=0.1) # 0.00005
     model.fit(df)
     return model, variables
 
@@ -133,19 +133,22 @@ def get_task_tree(current_data,
     task = None
     j = -n_prev_tasks
     for i in range(n_prev_tasks, 0, -1):
-        # if i == n_prev_tasks:
-        #     task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=top_task)
-        # else:
-        #     task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=task.parent)
-        # if f'prev_{i}_task_state' in current_data:
-        #     state = Node(str(current_data[f'prev_{i}_task_state']) + f" {j}", parent=task)
-        #     if 'soma:ExecutionState_Failed' in current_data[f'prev_{i}_task_state']:
-        #         task.color = 'red'
-        #         state.color = 'red'
-        #     if f'prev_{i}_task_failure_type' in current_data:
-        #         if 'None' not in current_data[f'prev_{i}_task_failure_type']:
-        #             failure_type = Node(str(current_data[f'prev_{i}_task_failure_type']) + f" {j}", parent=state)
-        #             failure_type.color = 'red'
+        if 'None' in current_data[f'prev_{i}_task_type']:
+            j += 1
+            continue
+        if task is None:
+            task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=top_task)
+        else:
+            task = Node(str(current_data[f'prev_{i}_task_type']) + f" {j}", parent=task.parent)
+        if f'prev_{i}_task_state' in current_data:
+            state = Node(str(current_data[f'prev_{i}_task_state']) + f" {j}", parent=task)
+            if 'soma:ExecutionState_Failed' in current_data[f'prev_{i}_task_state']:
+                task.color = 'red'
+                state.color = 'red'
+            if f'prev_{i}_task_failure_type' in current_data:
+                if 'None' not in current_data[f'prev_{i}_task_failure_type']:
+                    failure_type = Node(str(current_data[f'prev_{i}_task_failure_type']) + f" {j}", parent=state)
+                    failure_type.color = 'red'
         j += 1
 
     if task is not None:
@@ -205,14 +208,15 @@ def get_task_tree(current_data,
                     for attrib in attributes:
                         current_data[f'task_{attrib}'] = current_data[f'next_task_{attrib}']
                 next_task = Node(str(current_data['task_type']) + f" {j}", parent=next_task.parent)
-                if f'task_state' in current_data and 'state' in attributes:
-                    state = Node(str(current_data[f'task_state']) + f" {j}", parent=next_task)
-                    if f'task_failure_type' in current_data and 'failure_type' in attributes:
-                        if 'None' not in current_data[f'task_failure_type']:
-                            failure_type = Node(str(current_data[f'task_failure_type']) + f" {j}", parent=state)
-                            next_task.color = 'red'
-                            state.color = 'red'
-                            failure_type.color = 'red'
+                if attributes is not None:
+                    if f'task_state' in current_data and 'state' in attributes:
+                        state = Node(str(current_data[f'task_state']) + f" {j}", parent=next_task)
+                        if f'task_failure_type' in current_data and 'failure_type' in attributes:
+                            if 'None' not in current_data[f'task_failure_type']:
+                                failure_type = Node(str(current_data[f'task_failure_type']) + f" {j}", parent=state)
+                                next_task.color = 'red'
+                                state.color = 'red'
+                                failure_type.color = 'red'
                 j += 1
             # If next task is None, change current task and its attributes to the parent task and its attributes
             else:
@@ -302,8 +306,9 @@ def get_task_tree(current_data,
             # print(dataframe)
             current_data = get_row_mode(dataframe)
         else:
-            mpe, likelihood = model.mpe(model.bind(current_data))
-            current_data = mpe[0].to_json()
+            evidence = model.bind(current_data) if enforce_success else current_data
+            mpe, likelihood = model.mpe(evidence)
+            current_data = mpe[0].to_json() if enforce_success else mpe[0]
         
         if plot and (use_dataframe or use_sql) and cond(current_data):
             title = f"{j}_EVIDENCE::"
@@ -364,8 +369,9 @@ def set_old_tasks(df, current_indicies, heirarchy, n_tasks, neem_indicies,
     current_end = df_to_modify[f'{task_type}_end'][current_indicies].values[0]
     current_task = df_to_modify[f'{task_type}'][current_indicies].values[0]
     current_task_type = df_to_modify[f'{task_type}_type'][current_indicies].values[0]
-    current_task_attributes = {attrib: df_to_modify[f'{task_type}_{attrib}'][current_indicies].values[0]
-                               for attrib in set_attribures}
+    if set_attribures is not None:
+        current_task_attributes = {attrib: df_to_modify[f'{task_type}_{attrib}'][current_indicies].values[0]
+                                for attrib in set_attribures}
     # find first old task
     prev_task, prev_task_type, prev_task_attributes = get_prev_task(df, current_task, current_start, current_end,
                                                                   heirarchy, task_type, task_attributes=set_attribures)
@@ -432,12 +438,12 @@ if __name__ == '__main__':
     use_participant = False
     attributes = None
     all_attributes = ['participant_type', 'participant', 'param', 'state', 'failure_type']
-    attributes = ['state']
+    # attributes = ['participant_type', 'state']
     load_df = True
     load_from_sql = not load_df
     save_df = True
     infer_from_df = True
-    enforce_success = True
+    enforce_success = False
     n_prev_subtasks = 0
     n_prev_tasks = 3
     n_top_tasks = 1
@@ -480,7 +486,7 @@ if __name__ == '__main__':
                                     hover_data={'task':True, 'prev_1_task_type':True, 'parent_1_task_type':True, 'next_task_type':True},
                                     # hover_data={'subtask':True, 'task':True, 'participant_type':True},
                                     # text=f'subtask_type',
-                                    title=f"tasks for {curr_df['neem_name'].values[0]}")
+                                    title=f"Tasks For {curr_df['neem_name'].values[0]}")
             close_vals = [1]
             while len(close_vals) > 0:
                 diff = np.diff(curr_df[f'task_start'])
@@ -498,8 +504,18 @@ if __name__ == '__main__':
             # fig.data[1].width=0.5 # update the width of the 'Actual' schedule bars (the second trace of the figure)
             # for i in range(1,len(fig.data)):
             #     fig.data[i].width = 0.5
+            fig.update_layout(
+                font_family="Courier New",
+                font_color="black",
+                font_size=20,
+                title_font_family="Times New Roman",
+                title_font_color="black",
+                title_font_size=30,
+                legend_title_font_color="black",
+                legend_title_font_size=24,
+            )
             fig.show()
-            # exit()
+            exit()
         exit()
     if load_df:
         df = pd.read_pickle('df.pkl')
@@ -572,10 +588,10 @@ if __name__ == '__main__':
     # evidence['task_type'] = {'soma:PhysicalTask'}
     evidence['top_1_task_type'] = {'soma:Transporting'}
     # evidence['prev_3_task_type'] = {'None'}
-    # evidence['task_type'] = {'soma:Fetching'}
-    # evidence['participant_type'] = {'soma:Milk'}
-    evidence['task_state'] = {'soma:ExecutionState_Failed'}
-    evidence['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
+    evidence['task_type'] = {'soma:Opening'}
+    # evidence['next_task_participant_type'] = {'soma:Milk'}
+    # evidence['task_state'] = {'soma:ExecutionState_Failed'}
+    # evidence['next_task_state'] = {'soma:ExecutionState_Succeeded', 'None'}
     # evidence['participant_type'] = {'soma:Bowl', 'soma:Milk',
     #                                 'soma:Plate', 'soma:Spoon', 'soma:Cereal',
     #                                 'soma:Fork', 'soma:Cup'}
@@ -639,18 +655,19 @@ if __name__ == '__main__':
         model, variables = infer_and_fit_model_from_df(df)
         print("number_of_leaves = ", len(model.leaves))
         print(model.priors['environment'])
-        # model.plot(directory="/tmp/neem_action_tree", plotvars=variables)
-        model.save("/tmp/neem_action_tree.jpt")
+        # model.plot(directory="/tmp/predict_next_task", plotvars=variables)
+        model.save("/tmp/predict_next_task.jpt")
 
         print("model size", model.number_of_parameters())
 
     else:
-        # model = jpt.trees.JPT.load_from_sql("/tmp/neem_action_tree.jpt")
-        # model = jpt.trees.JPT.load_from_sql("neem_action_tree_looper_16_5_2023.jpt")
-        # model = jpt.trees.JPT.load_from_sql("neem_action_tree_2_prev_looper_19_5_2023.jpt")
-        model = jpt.trees.JPT.load_from_sql("neem_action_tree_3_prev_23_5_2023.jpt")
+        # model = jpt.trees.JPT.load("/tmp/neem_action_tree.jpt")
+        # model = jpt.trees.JPT.load("neem_action_tree_looper_16_5_2023.jpt")
+        # model = jpt.trees.JPT.load("neem_action_tree_2_prev_looper_19_5_2023.jpt")
+        model = jpt.trees.JPT.load("neem_action_tree_3_prev_23_5_2023.jpt")
     
     print("Mean Log Likelihood = ", np.mean(np.log(model.likelihood(df))))
+    model.plot(directory="/tmp/predict_next_task")
     # exit()
     mpe, likelihood = model.mpe(model.bind(evidence))
     # print("mpe = ", mpe[0])
@@ -666,7 +683,9 @@ if __name__ == '__main__':
         # get_task_tree(df_mode, use_sql=True, tree_name='dataframe_tree', engine=engine, enforce_success=enforce_success)
         get_task_tree(df_mode, use_dataframe=True, tree_name='dataframe_tree', df=df, plot=True, enforce_success=enforce_success)
         # plt.show()
-    get_task_tree(mpe[0].to_json(), model=model, enforce_success=enforce_success)
+
+    current_data = mpe[0].to_json() if enforce_success else mpe[0]
+    get_task_tree(current_data, model=model, enforce_success=enforce_success)
 
     
     
